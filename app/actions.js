@@ -106,8 +106,13 @@ export async function transcribeAction(audioUrl) {
   try {
     // Fetch the file from Vercel Blob into server memory
     // This bypasses the 4.5MB Serverless Function REQUEST body limit
-    const audioRes = await fetch(audioUrl);
-    if (!audioRes.ok) throw new Error('Failed to fetch audio from storage');
+    const audioRes = await fetch(audioUrl, {
+      headers: {
+        'Authorization': `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`
+      }
+    });
+    if (!audioRes.ok) throw new Error(`Failed to fetch audio from storage (${audioRes.status})`);
+
     const audioBlob = await audioRes.blob();
 
     const data = new FormData();
