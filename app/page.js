@@ -60,13 +60,13 @@ export default function Page() {
     }, 100);
 
     try {
-      console.log('Starting upload for:', audioFile.name, 'Type:', audioFile.type, 'Size:', audioFile.size);
+      const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
+      console.log('Starting upload for:', fileName, 'Type:', audioFile.type, 'Size:', audioFile.size);
       
       // Step 1: Client-side upload to Vercel Blob (bypasses 4.5MB limit)
-      const blob = await upload(audioFile.name, audioFile, {
-        access: 'public',
+      // Note: access and contentType are handled on the server side in handleUpload
+      const blob = await upload(fileName, audioFile, {
         handleUploadUrl: '/api/upload',
-        contentType: audioFile.type || 'audio/wav', // Ensure content type is passed
       });
 
       console.log('Upload successful! Blob URL:', blob.url);

@@ -25,6 +25,11 @@ export async function POST(request) {
             'video/ogg'
           ],
           maximumSizeInBytes: 50 * 1024 * 1024, // 50MB
+          addRandomSuffix: true,
+          validUntil: Date.now() + 3600000, // 1 hour
+          tokenPayload: JSON.stringify({
+            timestamp: Date.now(),
+          }),
         };
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
