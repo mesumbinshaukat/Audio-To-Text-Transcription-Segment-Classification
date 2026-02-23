@@ -104,14 +104,17 @@ export async function transcribeAction(audioUrl) {
 
   let whisperResult;
   try {
-    // Fetch the file from Vercel Blob into server memory
-    // This bypasses the 4.5MB Serverless Function REQUEST body limit
-    const audioRes = await fetch(audioUrl, {
+    // Fetch the file from the provided URL (Vercel, Azure, etc.)
+    const isVercelBlob = audioUrl.includes('blob.vercel-storage.com');
+    const fetchOptions = isVercelBlob ? {
       headers: {
         'Authorization': `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`
       }
-    });
-    if (!audioRes.ok) throw new Error(`Failed to fetch audio from storage (${audioRes.status})`);
+    } : {};
+
+    const audioRes = await fetch(audioUrl, fetchOptions);
+    if (!audioRes.ok) throw new Error(`Failed to fetch audio from ${isVercelBlob ? 'Vercel' : 'External Storage'} (${audioRes.status})`);
+
 
     const audioBlob = await audioRes.blob();
 
