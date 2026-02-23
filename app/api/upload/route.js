@@ -9,22 +9,36 @@ export async function POST(request) {
       body,
       request,
       onBeforeGenerateToken: async (pathname) => {
-        // Authenticate users here if needed
+        console.log('Generating Vercel Blob token for:', pathname);
         return {
-          allowedContentTypes: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/x-m4a', 'audio/mp4'],
+          allowedContentTypes: [
+            'audio/mpeg', 
+            'audio/wav', 
+            'audio/wave', 
+            'audio/x-wav', 
+            'audio/ogg', 
+            'audio/webm', 
+            'audio/x-m4a', 
+            'audio/mp4',
+            'video/mp4',
+            'video/webm',
+            'video/ogg'
+          ],
           maximumSizeInBytes: 50 * 1024 * 1024, // 50MB
         };
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
-        console.log('Blob upload completed', blob.url);
+        console.log('Blob upload completed successfully:', blob.url);
       },
     });
 
     return NextResponse.json(jsonResponse);
   } catch (error) {
+    console.error('Vercel Blob Token Generation Error:', error);
     return NextResponse.json(
       { error: error.message },
       { status: 400 }
     );
   }
 }
+
