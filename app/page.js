@@ -4,23 +4,17 @@ import { useState } from 'react';
 import { transcribeAction } from './actions';
 
 export default function Page() {
-  const [text, setText] = useState('');
-  const [segments, setSegments] = useState([]);
+  const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [timer, setTimer] = useState(0);
-
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+  const [error, setError] = useState('');
 
   async function handleAction(formData) {
     setLoading(true);
-    setText('');
-    setSegments([]);
+    setResult(null);
+    setError('');
     setTimer(0);
-    
+
     const startTime = Date.now();
     const interval = setInterval(() => {
       setTimer(((Date.now() - startTime) / 1000).toFixed(1));
@@ -29,44 +23,41 @@ export default function Page() {
     try {
       const res = await transcribeAction(formData);
       clearInterval(interval);
-      setTimer(((Date.now() - startTime) / 1000).toFixed(2));
-      
+
       if (res.error) {
-        setText('Error: ' + res.error);
+        setError(res.error);
       } else {
-        setText(res.text || '');
-        setSegments(res.segments || []);
+        setResult(res);
       }
     } catch (err) {
       clearInterval(interval);
-      setText('Failed to connect to server');
+      setError('Failed to connect to server');
     } finally {
       setLoading(false);
     }
   }
 
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   return (
-    <div style={{ 
-      background: 'white', 
-      padding: '2rem', 
-      borderRadius: '8px', 
-      boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-      maxWidth: '600px',
-      width: '100%'
-    }}>
-      <h1 style={{ marginBottom: '1.5rem', fontSize: '1.5rem' }}>Audio Transcriber</h1>
-      
+    <div style={{ background: 'white', padding: '2rem', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', maxWidth: '700px', width: '100%' }}>
+      <h1 style={{ marginBottom: '1.5rem', fontSize: '1.5rem' }}>Audio Transcriber + Classifier</h1>
+
       <form action={handleAction}>
-        <input 
-          type="file" 
-          name="audio" 
-          accept="audio/*" 
-          required 
-          style={{ display: 'block', marginBottom: '1rem', width: '100%' }} 
+        <input
+          type="file"
+          name="audio"
+          accept="audio/*"
+          required
+          style={{ display: 'block', marginBottom: '1rem', width: '100%' }}
         />
-        <button 
-          type="submit" 
-          disabled={loading} 
+        <button
+          type="submit"
+          disabled={loading}
           style={{
             background: loading ? '#ccc' : '#0070f3',
             color: 'white',
@@ -76,57 +67,82 @@ export default function Page() {
             cursor: loading ? 'default' : 'pointer',
             width: '100%',
             fontWeight: 'bold',
-            transition: 'background 0.3s'
           }}
         >
-          {loading ? `Transcribing... (${timer}s)` : 'Transcribe'}
+          {loading ? `Processing... (${timer}s)` : 'Transcribe & Classify'}
         </button>
       </form>
 
       {loading && (
-        <p style={{ marginTop: '1rem', textAlign: 'center', color: '#666' }}>
-          Uploading and processing audio... <strong>{timer}s</strong>
+        <p style={{ marginTop: '1rem', color: '#666', textAlign: 'center' }}>
+          Running Whisper → then Gemini... <strong>{timer}s</strong>
         </p>
       )}
 
-      {text && !loading && (
-        <div style={{ 
-          marginTop: '1.5rem', 
-          borderTop: '1px solid #eee', 
-          paddingTop: '1rem'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <strong>Transcription Details:</strong>
-            <span style={{ fontSize: '0.85rem', color: '#888' }}>Total time: {timer}s</span>
+      {error && (
+        <p style={{ marginTop: '1rem', color: 'red' }}>Error: {error}</p>
+      )}
+
+      {result && !loading && (
+        <div style={{ marginTop: '1.5rem', borderTop: '1px solid #eee', paddingTop: '1rem' }}>
+
+          {/* Timing Summary */}
+          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ flex: 1, background: '#f0f7ff', borderRadius: '6px', padding: '0.75rem', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: '#555', marginBottom: '0.25rem' }}>Whisper Time</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#0070f3' }}>{result.whisperTime}s</div>
+            </div>
+            <div style={{ flex: 1, background: '#f0fff4', borderRadius: '6px', padding: '0.75rem', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: '#555', marginBottom: '0.25rem' }}>Gemini Time</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#059669' }}>
+                {result.geminiError ? 'Error' : result.geminiTime + 's'}
+              </div>
+            </div>
+            <div style={{ flex: 1, background: '#fafafa', borderRadius: '6px', padding: '0.75rem', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: '#555', marginBottom: '0.25rem' }}>Total Time</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#333' }}>
+                {(parseFloat(result.whisperTime) + parseFloat(result.geminiTime || 0)).toFixed(2)}s
+              </div>
+            </div>
           </div>
-          
-          <div style={{ maxHeight: '400px', overflowY: 'auto', textAlign: 'left' }}>
-            {segments.length > 0 ? (
-              segments.map((seg, i) => (
-                <div key={i} style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
-                  <span style={{ 
-                    color: '#0070f3', 
-                    fontWeight: 'bold', 
-                    marginRight: '0.75rem',
-                    fontSize: '0.8rem',
-                    background: '#f0f7ff',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {formatTime(seg.start)} - {formatTime(seg.end)}
-                  </span>
-                  <span>{seg.text}</span>
-                </div>
-              ))
+
+          {/* Whisper Segments */}
+          <details open>
+            <summary style={{ fontWeight: 'bold', cursor: 'pointer', marginBottom: '0.75rem' }}>
+              Whisper Transcription ({result.segments.length} segments)
+            </summary>
+            <div style={{ maxHeight: '300px', overflowY: 'auto', background: '#f8f9fa', borderRadius: '6px', padding: '0.75rem' }}>
+              {result.segments.length > 0 ? (
+                result.segments.map((seg, i) => (
+                  <div key={i} style={{ marginBottom: '0.6rem', fontSize: '0.9rem' }}>
+                    <span style={{ color: '#0070f3', fontWeight: 'bold', marginRight: '0.5rem', fontSize: '0.75rem', background: '#e8f0fe', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                      {formatTime(seg.start)} – {formatTime(seg.end)}
+                    </span>
+                    <span>{seg.text}</span>
+                  </div>
+                ))
+              ) : (
+                <p>{result.text}</p>
+              )}
+            </div>
+          </details>
+
+          {/* Gemini Classification */}
+          <details style={{ marginTop: '1rem' }}>
+            <summary style={{ fontWeight: 'bold', cursor: 'pointer', marginBottom: '0.75rem' }}>
+              Gemini Classification Output
+            </summary>
+            {result.geminiError ? (
+              <p style={{ color: 'red', fontSize: '0.9rem' }}>Gemini error: {result.geminiError}</p>
             ) : (
-              <p>{text}</p>
+              <pre style={{ background: '#f8f9fa', borderRadius: '6px', padding: '0.75rem', overflowX: 'auto', fontSize: '0.8rem', maxHeight: '500px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {JSON.stringify(result.geminiResult, null, 2)}
+              </pre>
             )}
-          </div>
+          </details>
+
         </div>
       )}
     </div>
   );
 }
-
-

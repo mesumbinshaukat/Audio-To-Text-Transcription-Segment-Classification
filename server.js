@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const axios = require('axios');
@@ -15,7 +16,7 @@ if (!fs.existsSync(uploadDir)){
 
 const upload = multer({ dest: uploadDir });
 
-const API_KEY = 'ozk61AutGktgzLJampRmd9VNK5GBOQWs';
+const API_KEY = process.env.DEEPINFRA_API_KEY;
 const API_URL = 'https://api.deepinfra.com/v1/openai/audio/transcriptions';
 
 app.get('/', (req, res) => {
