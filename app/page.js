@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { upload } from '@vercel/blob/client';
 import { transcribeAction } from './actions';
 
 const PulseLoader = ({ message }) => (
@@ -59,28 +60,23 @@ export default function Page() {
     }, 100);
 
     try {
-      // Step 1: Upload the audio file to our server API route,
-      // which then saves it to Vercel Blob using server-side put().
-      // This avoids the broken client-side token exchange flow.
-      const uploadData = new FormData();
-      uploadData.append('file', audioFile);
+      // Step 1: Upload directly from browser to Vercel Blob.
+      // The /api/upload route generates a one-time token; the file goes
+      // straight to blob storage — NEVER through a serverless function.
+      // This bypasses Vercel's 4.5MB serverless limit entirely.
+      const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
+      console.log('[upload] Starting:', fileName, audioFile.type, audioFile.size, 'bytes');
 
-      const uploadRes = await fetch('/api/upload', {
-        method: 'POST',
-        body: uploadData,
+      const blob = await upload(fileName, audioFile, {
+        access: 'public',
+        handleUploadUrl: '/api/upload',
       });
 
-      if (!uploadRes.ok) {
-        const errData = await uploadRes.json().catch(() => ({}));
-        throw new Error(errData.error || `Upload failed with status ${uploadRes.status}`);
-      }
-
-      const { url: blobUrl } = await uploadRes.json();
-      console.log('Upload successful! Blob URL:', blobUrl);
+      console.log('[upload] Done. URL:', blob.url);
       setLoadingMessage('Transcribing & Classifying...');
 
-      // Step 2: Pass the Blob URL to the server action for transcription
-      const res = await transcribeAction(blobUrl);
+      // Step 2: Pass the Blob URL to the server action for AI processing.
+      const res = await transcribeAction(blob.url);
       clearInterval(interval);
 
       if (res.error) {
@@ -90,12 +86,15 @@ export default function Page() {
       }
     } catch (err) {
       clearInterval(interval);
-      setError('Error: ' + (err.message || 'Something went wrong. Please try again.'));
+      console.error('[upload] Error:', err);
+      // Surface the exact error message so we can see what token gen failed with
+      setError('Upload error: ' + (err.message || 'Unknown error. Check Vercel logs and ensure BLOB_READ_WRITE_TOKEN is set.'));
     } finally {
       setLoading(false);
       setLoadingMessage('');
     }
   };
+
 
 
   const formatTime = (seconds) => {
