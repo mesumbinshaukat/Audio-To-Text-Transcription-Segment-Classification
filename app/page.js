@@ -1,16 +1,55 @@
 'use client';
 
 import { useState } from 'react';
+import { upload } from '@vercel/blob/client';
 import { transcribeAction } from './actions';
+
+const PulseLoader = ({ message }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', margin: '2rem 0' }}>
+    <div style={{ display: 'flex', gap: '0.5rem' }}>
+      {[0, 1, 2].map(i => (
+        <div 
+          key={i} 
+          style={{
+            width: '12px',
+            height: '12px',
+            background: '#0070f3',
+            borderRadius: '50%',
+            animation: 'pulse 1.4s ease-in-out infinite',
+            animationDelay: `${i * 0.15}s`
+          }}
+        />
+      ))}
+    </div>
+    <span style={{ fontSize: '0.9rem', color: '#666', fontWeight: '500' }}>{message || 'Processing...'}</span>
+    <style>{`
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 0.4; }
+        50% { transform: scale(1.5); opacity: 1; }
+      }
+    `}</style>
+  </div>
+);
 
 export default function Page() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [timer, setTimer] = useState(0);
   const [error, setError] = useState('');
 
-  async function handleAction(formData) {
+  const handleFormSubmit = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const audioFile = formData.get('audio');
+    
+    if (!audioFile) {
+      setError('Please select an audio file');
+      return;
+    }
+
     setLoading(true);
+    setLoadingMessage('Uploading to secure storage...');
     setResult(null);
     setError('');
     setTimer(0);
@@ -21,7 +60,16 @@ export default function Page() {
     }, 100);
 
     try {
-      const res = await transcribeAction(formData);
+      // Step 1: Client-side upload to Vercel Blob (bypasses 4.5MB limit)
+      const blob = await upload(audioFile.name, audioFile, {
+        access: 'public',
+        handleUploadUrl: '/api/upload',
+      });
+
+      setLoadingMessage('Transcribing & Classifying...');
+
+      // Step 2: Pass the Blob URL to the server action
+      const res = await transcribeAction(blob.url);
       clearInterval(interval);
 
       if (res.error) {
@@ -31,11 +79,12 @@ export default function Page() {
       }
     } catch (err) {
       clearInterval(interval);
-      setError('Failed to connect to server');
+      setError('Error: ' + (err.message || 'Check your internet or Vercel Blob token configuration'));
     } finally {
       setLoading(false);
+      setLoadingMessage('');
     }
-  }
+  };
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -44,17 +93,26 @@ export default function Page() {
   };
 
   return (
-    <div style={{ background: 'white', padding: '2rem', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', maxWidth: '700px', width: '100%' }}>
-      <h1 style={{ marginBottom: '1.5rem', fontSize: '1.5rem' }}>Audio Transcriber + Classifier</h1>
+    <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', maxWidth: '750px', width: '100%', margin: '2rem auto' }}>
+      <h1 style={{ marginBottom: '1.5rem', fontSize: '1.75rem', textAlign: 'center', color: '#111' }}>Audio Transcriber + Classifier</h1>
 
-      <form action={handleAction}>
-        <input
-          type="file"
-          name="audio"
-          accept="audio/*"
-          required
-          style={{ display: 'block', marginBottom: '1rem', width: '100%' }}
-        />
+      <form onSubmit={handleFormSubmit}>
+        <div style={{ 
+          border: '2px dashed #e0e0e0', 
+          borderRadius: '8px', 
+          padding: '2rem', 
+          textAlign: 'center', 
+          marginBottom: '1.5rem',
+          background: '#fafafa'
+        }}>
+          <input
+            type="file"
+            name="audio"
+            accept="audio/*"
+            required
+            style={{ display: 'block', margin: '0 auto', width: '100%', cursor: 'pointer' }}
+          />
+        </div>
         <button
           type="submit"
           disabled={loading}
@@ -62,49 +120,61 @@ export default function Page() {
             background: loading ? '#ccc' : '#0070f3',
             color: 'white',
             border: 'none',
-            padding: '0.75rem 1.5rem',
-            borderRadius: '4px',
+            padding: '1rem 1.5rem',
+            borderRadius: '6px',
             cursor: loading ? 'default' : 'pointer',
             width: '100%',
             fontWeight: 'bold',
+            fontSize: '1rem',
+            transition: 'all 0.2s ease',
+            boxShadow: loading ? 'none' : '0 4px 10px rgba(0, 112, 243, 0.2)'
           }}
         >
-          {loading ? `Processing... (${timer}s)` : 'Transcribe & Classify'}
+          {loading ? `Working... (${timer}s)` : 'Transcribe & Classify Now'}
         </button>
       </form>
 
-      {loading && (
-        <p style={{ marginTop: '1rem', color: '#666', textAlign: 'center' }}>
-          Running Whisper → then Gemini... <strong>{timer}s</strong>
-        </p>
-      )}
+      {loading && <PulseLoader message={loadingMessage} />}
 
       {error && (
-        <p style={{ marginTop: '1rem', color: 'red' }}>Error: {error}</p>
+        <div style={{ 
+          marginTop: '1.5rem', 
+          padding: '1rem', 
+          background: '#fff5f5', 
+          border: '1px solid #feb2b2', 
+          borderRadius: '6px',
+          color: '#c53030',
+          fontSize: '0.9rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}>
+          <strong>⚠️ Error:</strong> {error}
+        </div>
       )}
 
       {result && !loading && (
-        <div style={{ marginTop: '1.5rem', borderTop: '1px solid #eee', paddingTop: '1rem' }}>
-
+        <div style={{ marginTop: '2rem', borderTop: '1px solid #eee', paddingTop: '1.5rem' }}>
           {/* Timing Summary */}
-          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-            <div style={{ flex: 1, background: '#f0f7ff', borderRadius: '6px', padding: '0.75rem', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', color: '#555', marginBottom: '0.25rem' }}>Whisper Time</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#0070f3' }}>{result.whisperTime}s</div>
+          <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+            <div style={{ flex: 1, background: '#f0f7ff', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #e1effe' }}>
+              <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.025em' }}>Whisper Time</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: '#1c64f2' }}>{result.whisperTime}s</div>
             </div>
-            <div style={{ flex: 1, background: '#f0fff4', borderRadius: '6px', padding: '0.75rem', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', color: '#555', marginBottom: '0.25rem' }}>Gemini Time</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#059669' }}>
+            <div style={{ flex: 1, background: '#f3faf7', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #def7ec' }}>
+              <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.025em' }}>Gemini Time</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: '#057a55' }}>
                 {result.geminiError ? 'Error' : result.geminiTime + 's'}
               </div>
             </div>
-            <div style={{ flex: 1, background: '#fafafa', borderRadius: '6px', padding: '0.75rem', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', color: '#555', marginBottom: '0.25rem' }}>Total Time</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#333' }}>
+            <div style={{ flex: 1, background: '#f9fafb', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #f3f4f6' }}>
+              <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.025em' }}>Total Time</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: '#374151' }}>
                 {(parseFloat(result.whisperTime) + parseFloat(result.geminiTime || 0)).toFixed(2)}s
               </div>
             </div>
           </div>
+
 
           {/* Whisper Segments */}
           <details open>

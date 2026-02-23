@@ -14,7 +14,18 @@ Ensure your `next.config.js` is configured correctly (already done in this repo)
 - `bodySizeLimit: '50mb'`: Allows uploading larger audio files.
 - `serverExternalPackages: ['@google/generative-ai']`: Ensures the Gemini SDK works in the serverless environment.
 
-## Step 2: Deploy
+## Step 2: Configure Vercel Blob (Required for 50MB Support)
+
+Vercel has a hard 4.5MB limit for standard serverless function payloads. To support files up to **50MB**, this app uses **Vercel Blob** for direct uploads.
+
+1.  Go to your project in the **Vercel Dashboard**.
+2.  Click on the **Storage** tab.
+3.  Select **Blob** and click **Create**.
+4.  Once created, click **Settings** → **Connect Project** and follow the steps.
+5.  This will automatically add the `BLOB_READ_WRITE_TOKEN` to your Environment Variables.
+6.  **Redeploy** your app for the settings to take effect.
+
+## Step 3: Set Other Environment Variables
 
 ### Option A: Using the Vercel Dashboard (Recommended)
 
@@ -44,7 +55,7 @@ Ensure your `next.config.js` is configured correctly (already done in this repo)
     vercel --prod
     ```
 
-## Step 3: Verify Deployment
+## Step 4: Verify Deployment
 
 1.  Once deployment is finished, Vercel will provide a `.vercel.app` URL.
 2.  Open the URL, upload a small audio file, and test the **Transcribe & Classify** button.

@@ -1,6 +1,7 @@
 'use server';
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { del } from '@vercel/blob';
 
 const GEMINI_PROMPT = `You are a strict classifier for convenience store audio transcriptions. Analyze the provided transcription, which consists of timestamped segments (each line like "start - end text" is one segment). Treat each timestamped block as a separate segment.
 
@@ -95,20 +96,25 @@ JSON Structure:
 Transcription:
 `;
 
-export async function transcribeAction(formData) {
-  const file = formData.get('audio');
-  if (!file) return { error: 'No file provided' };
+export async function transcribeAction(audioUrl) {
+  if (!audioUrl) return { error: 'No audio URL provided' };
 
   // --- Step 1: Whisper Transcription ---
   const whisperStart = Date.now();
 
-  const data = new FormData();
-  data.append('file', file);
-  data.append('model', 'openai/whisper-large-v3');
-  data.append('response_format', 'verbose_json');
-
   let whisperResult;
   try {
+    // Fetch the file from Vercel Blob into server memory
+    // This bypasses the 4.5MB Serverless Function REQUEST body limit
+    const audioRes = await fetch(audioUrl);
+    if (!audioRes.ok) throw new Error('Failed to fetch audio from storage');
+    const audioBlob = await audioRes.blob();
+
+    const data = new FormData();
+    data.append('file', audioBlob, 'audio.mp3');
+    data.append('model', 'openai/whisper-large-v3');
+    data.append('response_format', 'verbose_json');
+
     const response = await fetch('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
       method: 'POST',
       headers: {
@@ -117,16 +123,25 @@ export async function transcribeAction(formData) {
       body: data,
     });
 
-    const json = await response.json();
-
-    if (json.error) {
-      return { error: json.error.message || JSON.stringify(json.error) };
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return { 
+        error: `Whisper API error (${response.status}): ${errorData.error?.message || response.statusText || 'Unknown error'}` 
+      };
     }
 
+    const json = await response.json();
     whisperResult = json;
   } catch (error) {
-    console.error(error);
-    return { error: 'Transcription failed' };
+    console.error('Whisper Processing Error:', error);
+    return { error: `Transcription failed: ${error.message}` };
+  } finally {
+    // Cleanup: Delete the blob from Vercel storage after processing
+    try {
+      await del(audioUrl);
+    } catch (cleanupErr) {
+      console.error('Failed to delete blob:', cleanupErr);
+    }
   }
 
   const whisperTime = ((Date.now() - whisperStart) / 1000).toFixed(2);
