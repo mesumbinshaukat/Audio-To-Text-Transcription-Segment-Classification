@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { upload } from '@vercel/blob/client';
 import { transcribeAction } from './actions';
 
 const PulseLoader = ({ message }) => (
@@ -43,7 +42,7 @@ export default function Page() {
     const formData = new FormData(e.target);
     const audioFile = formData.get('audio');
     
-    if (!audioFile) {
+    if (!audioFile || audioFile.size === 0) {
       setError('Please select an audio file');
       return;
     }
@@ -60,21 +59,28 @@ export default function Page() {
     }, 100);
 
     try {
-      const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
-      console.log('Starting upload for:', fileName, 'Type:', audioFile.type, 'Size:', audioFile.size);
-      
-      // Step 1: Client-side upload to Vercel Blob (bypasses 4.5MB limit)
-      const blob = await upload(fileName, audioFile, {
-        access: 'public',
-        handleUploadUrl: '/api/upload',
+      // Step 1: Upload the audio file to our server API route,
+      // which then saves it to Vercel Blob using server-side put().
+      // This avoids the broken client-side token exchange flow.
+      const uploadData = new FormData();
+      uploadData.append('file', audioFile);
+
+      const uploadRes = await fetch('/api/upload', {
+        method: 'POST',
+        body: uploadData,
       });
 
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json().catch(() => ({}));
+        throw new Error(errData.error || `Upload failed with status ${uploadRes.status}`);
+      }
 
-      console.log('Upload successful! Blob URL:', blob.url);
+      const { url: blobUrl } = await uploadRes.json();
+      console.log('Upload successful! Blob URL:', blobUrl);
       setLoadingMessage('Transcribing & Classifying...');
 
-      // Step 2: Pass the Blob URL to the server action
-      const res = await transcribeAction(blob.url);
+      // Step 2: Pass the Blob URL to the server action for transcription
+      const res = await transcribeAction(blobUrl);
       clearInterval(interval);
 
       if (res.error) {
@@ -84,12 +90,13 @@ export default function Page() {
       }
     } catch (err) {
       clearInterval(interval);
-      setError('Error: ' + (err.message || 'Check your internet or Vercel Blob token configuration'));
+      setError('Error: ' + (err.message || 'Something went wrong. Please try again.'));
     } finally {
       setLoading(false);
       setLoadingMessage('');
     }
   };
+
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);

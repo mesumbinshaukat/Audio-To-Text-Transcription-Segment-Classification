@@ -1,49 +1,29 @@
-import { handleUpload } from '@vercel/blob/client';
+import { put } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 
 export async function POST(request) {
-  const body = await request.json();
 
   try {
-    const jsonResponse = await handleUpload({
-      body,
-      request,
-      onBeforeGenerateToken: async (pathname) => {
-        console.log('Generating Vercel Blob token for:', pathname);
-        return {
-          allowedContentTypes: [
-            'audio/mpeg', 
-            'audio/wav', 
-            'audio/wave', 
-            'audio/x-wav', 
-            'audio/ogg', 
-            'audio/webm', 
-            'audio/x-m4a', 
-            'audio/mp4',
-            'video/mp4',
-            'video/webm',
-            'video/ogg'
-          ],
-          maximumSizeInBytes: 50 * 1024 * 1024, // 50MB
-          addRandomSuffix: true,
-          validUntil: Date.now() + 3600000, // 1 hour
-          tokenPayload: JSON.stringify({
-            timestamp: Date.now(),
-          }),
-        };
-      },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        console.log('Blob upload completed successfully:', blob.url);
-      },
+    const formData = await request.formData();
+    const file = formData.get('file');
+
+    if (!file) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    }
+
+    const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
+    console.log('Uploading to Vercel Blob:', fileName, 'size:', file.size);
+
+    // Server-side upload: put() uses BLOB_READ_WRITE_TOKEN automatically
+    const blob = await put(fileName, file, {
+      access: 'public',
+      addRandomSuffix: false,
     });
 
-    return NextResponse.json(jsonResponse);
+    console.log('Blob stored at:', blob.url);
+    return NextResponse.json({ url: blob.url });
   } catch (error) {
-    console.error('Vercel Blob Token Generation Error:', error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 400 }
-    );
+    console.error('Upload error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-
