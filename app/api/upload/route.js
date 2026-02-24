@@ -2,11 +2,19 @@ import { handleUpload } from '@vercel/blob/client';
 import { NextResponse } from 'next/server';
 
 /**
- * POST:
- * This is the "Security Gate" for your uploads.
- * Because we use direct browser-to-Vercel uploads (to handle 50MB files), 
- * the browser needs a temporary "ticket" (token) to be allowed to save the file.
- * This method checks if everything is okay and gives the browser that ticket.
+ * API Route (POST):
+ * This endpoint is the backend "gatekeeper" for direct browser-to-blob uploads.
+ * 
+ * HOW IT WORKS:
+ * 1. The browser wants to upload a file (up to 50MB).
+ * 2. It asks this route for permission.
+ * 3. This route checks for the BLOB_READ_WRITE_TOKEN.
+ * 4. If everything is valid, it gives the browser a "secure ticket" (JSON token).
+ * 5. The browser uses that ticket to send the file directly to Vercel's storage.
+ * 
+ * WHY WE DO THIS:
+ * This bypasses the 4.5MB limit of standard Vercel serverless functions,
+ * allowing you to process large video and audio files smoothly.
  */
 export async function POST(request) {
   try {

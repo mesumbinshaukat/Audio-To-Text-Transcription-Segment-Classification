@@ -1,6 +1,13 @@
 # AI Transcription & Classifier
 
-Transcribes audio using **Whisper** (via DeepInfra) and then classifies the output using **Gemini 2.5 Flash** (via Google AI).
+Transcribes audio and video using **Whisper** (via DeepInfra) and classifies the output using **Gemini 2.5 Flash** (via Google AI). This app is optimized for Vercel, supporting files up to **50MB** and featuring a persistent storage library.
+
+## Key Features
+
+- **50MB Uploads**: Bypasses the 4.5MB Vercel limit by uploading directly to Vercel Blob from the browser.
+- **Video Support**: Transcribe and classify `.mp4` and `.webm` files alongside traditional audio.
+- **Blob Library**: Browse and process files already stored in your Vercel cloud storage.
+- **External Support**: Capable of processing direct URLs from Azure Blob Storage or other providers.
 
 ## Setup
 
@@ -13,6 +20,7 @@ Transcribes audio using **Whisper** (via DeepInfra) and then classifies the outp
    ```
    DEEPINFRA_API_KEY=your_deepinfra_key_here
    GEMINI_API_KEY=your_gemini_key_here
+   BLOB_READ_WRITE_TOKEN=your_vercel_blob_token_here
    ```
 
 3. **Run locally**
@@ -23,14 +31,12 @@ Transcribes audio using **Whisper** (via DeepInfra) and then classifies the outp
 
 ## Usage
 
-1. Upload an audio file (MP3, WAV, M4A, etc.)
-2. Click **Transcribe & Classify**
-3. The app shows:
-   - **Whisper Time** — how long transcription took
-   - **Gemini Time** — how long classification took
-   - **Total Time** — combined
-   - Collapsible **Whisper Transcription** with timestamps
-   - Collapsible **Gemini Classification** JSON output
+1. **Upload New**: Select any audio/video file and click **Log, Transcribe & Classify**.
+2. **Browse Library**: Click the library tab to see existing files in your cloud storage and process them instantly.
+3. **Results**:
+   - **Timings**: Detailed breakdown of Whisper vs. Gemini processing time.
+   - **Transcripts**: Full timestamped segments.
+   - **Classification**: Structured JSON based on a strict convenience store hierarchy.
 
 ## Deploy to Vercel
 
@@ -38,6 +44,6 @@ Transcribes audio using **Whisper** (via DeepInfra) and then classifies the outp
 vercel deploy
 ```
 
-Add your environment variables in the Vercel dashboard under **Project → Settings → Environment Variables**.
+Ensure your `BLOB_READ_WRITE_TOKEN` is configured in the Vercel dashboard.
 
-> No file system writes, no Express server — fully compatible with Vercel Serverless Functions.
+> Built with Next.js Server Actions and Vercel Blob — fully serverless.

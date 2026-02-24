@@ -5,44 +5,51 @@
 ```
 ai_transcription/
 ├── app/
-│   ├── actions.js     # Server Actions: Whisper + Gemini pipeline
-│   ├── layout.js      # Root layout
-│   └── page.js        # Client UI: file upload, timing display, results
-├── .env               # API keys (never committed)
-├── next.config.js     # Next.js config (50mb body limit for large audio)
+│   ├── api/upload/route.js # API Route: Vercel Blob token generation
+│   ├── actions.js          # Server Actions: Whisper + Gemini pipeline + Blob listing
+│   ├── layout.js           # Root layout
+│   └── page.js             # Client UI: Upload, Library, Results
+├── docs/                   # Case studies and detailed fixes
+├── .env                    # Secret keys
+├── vercel.json             # Global CORS and security headers
+├── next.config.js          # Next.js configuration
 ├── package.json
-└── server.js          # Standalone Express server (NOT used via Next.js)
+└── vercel.md               # Deployment guide
 ```
 
-## Request Flow
+## Request Flow (Upload Path)
 
 ```
-User uploads audio file
-        ↓
-[page.js] handleAction() calls transcribeAction(formData)
-        ↓
-[actions.js] Step 1 — Whisper (DeepInfra)
-  POST https://api.deepinfra.com/v1/openai/audio/transcriptions
-  model: openai/whisper-large-v3
-  response_format: verbose_json  ← gives us segments with timestamps
-  → returns: { text, segments: [{ start, end, text }] }
-  → whisperTime recorded
-        ↓
-[actions.js] Step 2 — Build timestamped string from segments
-  Format: "0.00 - 3.20 Hello welcome to the store\n..."
-        ↓
-[actions.js] Step 3 — Gemini 2.5 Flash
-  Model: gemini-2.5-flash
-  Prompt: [classification prompt] + timestamped transcription
-  → returns: JSON string (stripped of ```json fences)
-  → parsed and returned as geminiResult
-  → geminiTime recorded
-        ↓
-[page.js] Displays:
-  - Timing cards (whisperTime, geminiTime, total)
-  - Whisper segments (collapsible)
-  - Gemini JSON (collapsible)
+1. [page.js] User selects file (< 50MB) 
+2. [page.js] POST /api/upload → asks for secure upload token
+3. [route.js] Generates token using BLOB_READ_WRITE_TOKEN
+4. [page.js] Browser uploads file direct to Vercel storage
+5. [page.js] Calls transcribeAction(blob.url, shouldCleanup=true)
+6. [actions.js] Whispering (DeepInfra) → Gemini (AI Classification)
+7. [actions.js] Deletes blob from Vercel to save space
+8. [page.js] Displays results
 ```
+
+## Request Flow (Library / Azure Path)
+
+```
+1. [page.js] User clicks "Browse Library"
+2. [actions.js] listBlobsAction() fetches existing file URLs from Vercel
+3. [page.js] User clicks "Process" for an existing file
+4. [page.js] Calls transcribeAction(fileUrl, shouldCleanup=false)
+5. [actions.js] Fetches audio from Vercel (or Azure) into memory
+6. [actions.js] Whispering → Gemini
+7. [actions.js] Skip deletion (keeps file in Library)
+8. [page.js] Displays results
+```
+
+## Internal AI Logic (The Pipeline)
+
+| Step | Engine | Input | Logic |
+|---|---|---|---|
+| **Transcription** | Whisper-Large-v3 | Audio/Video URL | Fetches into server memory → DeepInfra API → Timestamped segments |
+| **Parsing** | Javascript | Whisper JSON | Maps segments into string: `start - end text` |
+| **Classification** | Gemini 2.5 Flash | Timestamped text | Strictly categorizes into Transactional, Operational, Security, etc. |
 
 ## Environment Variables
 
@@ -50,25 +57,16 @@ User uploads audio file
 |---|---|
 | `DEEPINFRA_API_KEY` | DeepInfra API key for Whisper |
 | `GEMINI_API_KEY` | Google Gemini API key |
-
-## Models Used
-
-| Step | Model | Purpose |
-|---|---|---|
-| Transcription | `openai/whisper-large-v3` | Speech-to-text with timestamps |
-| Classification | `gemini-2.5-flash` | Convenience store event classification |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob storage secret |
 
 ## Vercel Compatibility
 
-- **No file system writes** — audio is streamed directly from FormData
-- **No Express** — Next.js Server Actions handle all API logic
-- **Body size limit** — set to 50mb in `next.config.js` for large audio files
-- **Environment variables** — set in Vercel dashboard, accessed via `process.env`
+- **Direct Uploads** — Browser-to-Blob uploads bypass the 4.5MB Serverless Function limit.
+- **Memory Fetch** — `actions.js` fetches Blobs into memory (Serverless limit is ~1GB-3GB RAM), allowing for huge files to be forwarded to Whisper.
+- **Serverless Actions** — No Express server or file system needed.
 
 ## Local Dev
 
 ```bash
-npm run dev     # Start Next.js dev server at localhost:3000
+npm run dev     # Start at localhost:3000
 ```
-
-`server.js` is a legacy standalone Express server and is **not** part of the Next.js flow. It can be ignored.

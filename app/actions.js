@@ -3,6 +3,12 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { del, list } from '@vercel/blob';
 
+/**
+ * GEMINI_PROMPT:
+ * This is the instructions manual for the Gemini AI. 
+ * We tell it exactly how to read the transcription and which categories to use.
+ * Think of this as giving a "job description" to the AI so it knows what to look for.
+ */
 const GEMINI_PROMPT = `You are a strict classifier for convenience store audio transcriptions. Analyze the provided transcription, which consists of timestamped segments (each line like "start - end text" is one segment). Treat each timestamped block as a separate segment.
 
 ### CLASSIFICATION HIERARCHY (Source of Truth)

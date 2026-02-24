@@ -36,6 +36,12 @@ const PulseLoader = ({ message }) => (
   </div>
 );
 
+/**
+ * Page Component:
+ * This is the heart of your application's user interface.
+ * It manages everything you see on the screen: from picking files and 
+ * browsing the library to displaying those final AI results.
+ */
 export default function Page() {
   // State variables house our data and UI status
   const [view, setView] = useState('upload'); // 'upload' or 'library'
