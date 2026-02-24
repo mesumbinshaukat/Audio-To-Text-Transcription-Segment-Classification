@@ -1,7 +1,7 @@
 'use server';
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { del } from '@vercel/blob';
+import { del, list } from '@vercel/blob';
 
 const GEMINI_PROMPT = `You are a strict classifier for convenience store audio transcriptions. Analyze the provided transcription, which consists of timestamped segments (each line like "start - end text" is one segment). Treat each timestamped block as a separate segment.
 
@@ -96,10 +96,38 @@ JSON Structure:
 Transcription:
 `;
 
-export async function transcribeAction(audioUrl) {
+/**
+ * listBlobsAction:
+ * This method retrieves a list of the most recent files you've uploaded to Vercel's storage.
+ * It's used to show the "Library" of already-uploaded files so you don't have to upload them again.
+ */
+export async function listBlobsAction() {
+  try {
+    const { blobs } = await list({ limit: 20 });
+    // Filter to only show common audio and video files
+    return blobs.filter(blob => 
+      blob.pathname.match(/\.(mp3|wav|mp4|webm|m4a|ogg)$/i)
+    );
+  } catch (error) {
+    console.error('Failed to list blobs:', error);
+    return { error: 'Failed to retrieve files from storage' };
+  }
+}
+
+/**
+ * transcribeAction:
+ * This is the main engine. It takes a URL of an audio/video file,
+ * sends it to the Whisper AI for transcription, then sends that text to Gemini for classification.
+ * 
+ * @param {string} audioUrl - The direct link to the file (from Vercel, Azure, etc.)
+ * @param {boolean} shouldCleanup - If true, the file is deleted after processing (default: true). 
+ * Set to false when processing files already stored in your Library.
+ */
+export async function transcribeAction(audioUrl, shouldCleanup = true) {
   if (!audioUrl) return { error: 'No audio URL provided' };
 
   // --- Step 1: Whisper Transcription ---
+  // Here we use Whisper to turn the audio/video into timestamped text segments.
   const whisperStart = Date.now();
 
   let whisperResult;
@@ -144,11 +172,17 @@ export async function transcribeAction(audioUrl) {
     console.error('Whisper Processing Error:', error);
     return { error: `Transcription failed: ${error.message}` };
   } finally {
-    // Cleanup: Delete the blob from Vercel storage after processing
-    try {
-      await del(audioUrl);
-    } catch (cleanupErr) {
-      console.error('Failed to delete blob:', cleanupErr);
+    // Cleanup: Delete the blob from Vercel storage if requested
+    // This happens automatically for fresh "on-the-fly" uploads to save space.
+    if (shouldCleanup) {
+      try {
+        await del(audioUrl);
+        console.log('Cleaned up blob:', audioUrl);
+      } catch (cleanupErr) {
+        console.error('Failed to delete blob:', cleanupErr);
+      }
+    } else {
+      console.log('Skipping cleanup as requested (Library mode)');
     }
   }
 
@@ -161,6 +195,7 @@ export async function transcribeAction(audioUrl) {
     .join('\n');
 
   // --- Step 2: Gemini Classification ---
+  // Now we send that text to Gemini to categorize the conversation (Transactional, Security, etc.)
   const geminiStart = Date.now();
 
   let geminiResult = null;
