@@ -45,10 +45,6 @@ export async function POST(request) {
           validUntil: Date.now() + 7200000, // This ticket is valid for 2 hours
         };
       },
-      onUploadCompleted: async ({ blob }) => {
-        // This runs AFTER the file is safely stored.
-        console.log('[upload] Upload completed:', blob.url);
-      },
     });
 
     return NextResponse.json(jsonResponse);

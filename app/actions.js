@@ -1,7 +1,23 @@
 'use server';
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { VertexAI } from '@google-cloud/vertexai';
 import { del, list } from '@vercel/blob';
+
+/**
+ * GEMINI AI ENGINE (Vertex AI):
+ * We initialize the Google Vertex AI client using the Service Account 
+ * credentials (Project ID, Email, and Private Key) stored in our .env file.
+ */
+const vertex_ai = new VertexAI({
+  project: process.env.GOOGLE_CLOUD_PROJECT,
+  location: 'us-central1',
+  googleAuthOptions: {
+    credentials: {
+      client_email: process.env.GOOGLE_CLOUD_CLIENT_EMAIL,
+      private_key: process.env.GOOGLE_CLOUD_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }
+  }
+});
 
 /**
  * GEMINI_PROMPT:
@@ -208,12 +224,13 @@ export async function transcribeAction(audioUrl, shouldCleanup = true) {
   let geminiError = null;
 
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    // We use the Vertex AI model to categorize the conversation.
+    const model = vertex_ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const prompt = GEMINI_PROMPT + timestampedText;
     const result = await model.generateContent(prompt);
-    const rawText = result.response.text();
+    const response = await result.response;
+    const rawText = response.candidates[0].content.parts[0].text;
 
     // Strip markdown code fences if present
     const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
