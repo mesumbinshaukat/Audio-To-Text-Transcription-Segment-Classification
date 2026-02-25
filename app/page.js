@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { upload } from '@vercel/blob/client';
-import { transcribeAction, listBlobsAction } from './actions';
+import { transcribeAction, listBlobsAction, saveClassificationAction } from './actions';
+import Link from 'next/link';
 
 /**
  * PulseLoader:
@@ -115,6 +116,7 @@ export default function Page() {
         setError(res.error);
       } else {
         setResult(res);
+        if (res.geminiResult) saveClassificationAction(res.geminiResult);
       }
     } catch (err) {
       clearInterval(interval);
@@ -170,6 +172,10 @@ export default function Page() {
 
   return (
     <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', maxWidth: '750px', width: '100%', margin: '2rem auto' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #f0f0f0', paddingBottom: '1rem' }}>
+        <Link href="/" style={{ textDecoration: 'none', color: '#111', fontWeight: '800', fontSize: '1.1rem' }}>AI PRSR</Link>
+        <Link href="/dashboard" style={{ textDecoration: 'none', color: '#0070f3', fontSize: '0.85rem', fontWeight: '600' }}>Analytics Dashboard →</Link>
+      </header>
       <h1 style={{ marginBottom: '0.5rem', fontSize: '1.75rem', textAlign: 'center', color: '#111' }}>Audio Processor</h1>
       <p style={{ textAlign: 'center', color: '#666', marginBottom: '2rem', fontSize: '0.9rem' }}>Transcribe and classify audio or video files easily.</p>
 
@@ -302,6 +308,18 @@ export default function Page() {
                 {result.geminiError ? 'Error' : result.geminiTime + 's'}
               </div>
             </div>
+            {result.geminiResult?.usage && (
+              <>
+                <div style={{ flex: 1, background: '#fff7ed', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #ffedd5' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#c2410c', fontWeight: '700', textTransform: 'uppercase' }}>Input Tokens</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#9a3412' }}>{result.geminiResult.usage.promptTokens}</div>
+                </div>
+                <div style={{ flex: 1, background: '#eff6ff', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #dbeafe' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#1d4ed8', fontWeight: '700', textTransform: 'uppercase' }}>Output Tokens</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#1e40af' }}>{result.geminiResult.usage.candidatesTokens}</div>
+                </div>
+              </>
+            )}
             <div style={{ flex: 1, background: '#f9fafb', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #f3f4f6' }}>
               <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.025em' }}>Total Time</div>
               <div style={{ fontSize: '1.75rem', fontWeight: '800', color: '#374151' }}>

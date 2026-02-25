@@ -1,7 +1,10 @@
 'use server';
 
 import { VertexAI } from '@google-cloud/vertexai';
-import { del, list } from '@vercel/blob';
+import { del, list, put } from '@vercel/blob';
+import { revalidatePath } from 'next/cache';
+
+const RESULTS_FILE = 'history/results.json';
 
 /**
  * GEMINI AI ENGINE (Vertex AI):
@@ -230,11 +233,19 @@ export async function transcribeAction(audioUrl, shouldCleanup = true) {
     const prompt = GEMINI_PROMPT + timestampedText;
     const result = await model.generateContent(prompt);
     const response = await result.response;
+    const usage = response.usageMetadata || {};
     const rawText = response.candidates[0].content.parts[0].text;
 
     // Strip markdown code fences if present
     const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
     geminiResult = JSON.parse(cleaned);
+
+    // Attach token usage for the UI
+    geminiResult.usage = {
+      promptTokens: usage.promptTokenCount || 0,
+      candidatesTokens: usage.candidatesTokenCount || 0,
+      totalTokens: usage.totalTokenCount || 0,
+    };
   } catch (err) {
     console.error('Gemini error:', err);
     geminiError = err.message || 'Gemini classification failed';
@@ -250,4 +261,70 @@ export async function transcribeAction(audioUrl, shouldCleanup = true) {
     geminiResult,
     geminiError,
   };
+}
+
+/**
+ * saveClassificationAction:
+ * Persists a successful classification result into a global results.json file in Vercel Blob.
+ * This acts as our "simple database" for the dashboard.
+ */
+export async function saveClassificationAction(classificationData) {
+  if (!classificationData) return { error: 'No data to save' };
+
+  try {
+    // 1. Fetch existing history or start fresh
+    let history = [];
+    const { blobs } = await list({ prefix: 'history/' });
+    const existingFile = blobs.find(b => b.pathname === RESULTS_FILE);
+
+    if (existingFile) {
+      const res = await fetch(existingFile.url, { cache: 'no-store' });
+      if (res.ok) {
+        history = await res.json();
+      }
+    }
+
+    // 2. Append new record with a unique ID and timestamp
+    const newEntry = {
+      id: Date.now().toString(),
+      timestamp: new Date().toISOString(),
+      ...classificationData
+    };
+
+    history.push(newEntry);
+
+    // 3. Save back to Vercel Blob
+    await put(RESULTS_FILE, JSON.stringify(history, null, 2), {
+      access: 'public',
+      contentType: 'application/json',
+      addRandomSuffix: false, // Maintain same file path
+    });
+
+    console.log('[save] Persisted classification to history');
+    return { success: true };
+  } catch (error) {
+    console.error('[save] Failed to persist data:', error);
+    return { error: 'Failed to save to history' };
+  }
+}
+
+/**
+ * getAnalyticsAction:
+ * Retrieves the full history of classifications for the Dashboard.
+ */
+export async function getAnalyticsAction() {
+  try {
+    const { blobs } = await list({ prefix: 'history/' });
+    const existingFile = blobs.find(b => b.pathname === RESULTS_FILE);
+
+    if (!existingFile) return [];
+
+    const res = await fetch(existingFile.url, { cache: 'no-store' });
+    if (!res.ok) return [];
+
+    return await res.json();
+  } catch (error) {
+    console.error('[analytics] Failed to fetch history:', error);
+    return [];
+  }
 }
