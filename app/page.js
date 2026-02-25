@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { upload } from '@vercel/blob/client';
-import { transcribeAction, listBlobsAction, saveClassificationAction } from './actions';
+import { transcribeAction, listBlobsAction } from './actions';
 import Link from 'next/link';
 
 /**

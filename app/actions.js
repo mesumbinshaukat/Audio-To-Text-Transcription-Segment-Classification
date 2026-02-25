@@ -2,7 +2,6 @@
 
 import { VertexAI } from '@google-cloud/vertexai';
 import { del, list, put } from '@vercel/blob';
-import { revalidatePath } from 'next/cache';
 
 const RESULTS_FILE = 'history/results.json';
 
@@ -287,8 +286,13 @@ export async function saveClassificationAction(classificationData) {
     // 1. Fetch existing history or start fresh
     let history = [];
     const { blobs } = await list({ prefix: 'history/' });
-    // Look for the specific file name in the list of blobs
-    const existingFile = blobs.find(b => b.pathname.includes('results.json'));
+    // Look for the specific file name in the list of blobs - search for exact pathname first
+    let existingFile = blobs.find(b => b.pathname === RESULTS_FILE);
+    
+    // Fallback: if not found by exact name, look for anything matching results.json in history/
+    if (!existingFile) {
+      existingFile = blobs.find(b => b.pathname.includes('results.json'));
+    }
 
     if (existingFile) {
       const res = await fetch(existingFile.url, { cache: 'no-store' });
@@ -311,6 +315,7 @@ export async function saveClassificationAction(classificationData) {
       access: 'public',
       contentType: 'application/json',
       addRandomSuffix: false, // Maintain same file path
+      addOverwrite: true,     // Allow updating the existing file
     });
 
     console.log('[save] Persisted classification to history');
