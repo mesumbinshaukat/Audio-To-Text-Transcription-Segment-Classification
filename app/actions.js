@@ -315,7 +315,7 @@ export async function saveClassificationAction(classificationData) {
       access: 'public',
       contentType: 'application/json',
       addRandomSuffix: false, // Maintain same file path
-      addOverwrite: true,     // Allow updating the existing file
+      allowOverwrite: true,   // Allow updating the existing file
     });
 
     console.log('[save] Persisted classification to history');
