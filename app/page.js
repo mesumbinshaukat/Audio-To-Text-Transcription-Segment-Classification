@@ -116,7 +116,6 @@ export default function Page() {
         setError(res.error);
       } else {
         setResult(res);
-        if (res.geminiResult) saveClassificationAction(res.geminiResult);
       }
     } catch (err) {
       clearInterval(interval);

@@ -253,7 +253,7 @@ export async function transcribeAction(audioUrl, shouldCleanup = true) {
 
   const geminiTime = ((Date.now() - geminiStart) / 1000).toFixed(2);
 
-  return {
+  const finalResult = {
     text: whisperResult.text,
     segments,
     whisperTime,
@@ -261,6 +261,18 @@ export async function transcribeAction(audioUrl, shouldCleanup = true) {
     geminiResult,
     geminiError,
   };
+
+  // --- Step 3: Auto-Save to History ---
+  // If we have a successful classification, we persist it to our results.json file.
+  if (geminiResult && !geminiError) {
+    try {
+      await saveClassificationAction(geminiResult);
+    } catch (saveErr) {
+      console.error('[transcribe] Failed to auto-save result:', saveErr);
+    }
+  }
+
+  return finalResult;
 }
 
 /**
@@ -275,7 +287,8 @@ export async function saveClassificationAction(classificationData) {
     // 1. Fetch existing history or start fresh
     let history = [];
     const { blobs } = await list({ prefix: 'history/' });
-    const existingFile = blobs.find(b => b.pathname === RESULTS_FILE);
+    // Look for the specific file name in the list of blobs
+    const existingFile = blobs.find(b => b.pathname.includes('results.json'));
 
     if (existingFile) {
       const res = await fetch(existingFile.url, { cache: 'no-store' });
