@@ -14,7 +14,7 @@ const RESULTS_FILE = 'history/results.json';
  */
 const vertex_ai = new VertexAI({
   project: process.env.GOOGLE_CLOUD_PROJECT,
-  location: 'global',
+  location: 'us-central1',
   googleAuthOptions: {
     credentials: {
       client_email: process.env.GOOGLE_CLOUD_CLIENT_EMAIL,
