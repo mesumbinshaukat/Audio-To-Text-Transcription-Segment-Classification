@@ -1,13 +1,15 @@
 # AI Transcription & Classifier
 
-Transcribes audio and video using **Whisper** (via DeepInfra) and classifies the output using **Gemini 2.5 Flash** (via Google AI). This app is optimized for Vercel, supporting files up to **50MB** and featuring a persistent storage library.
+Transcribes audio and video using **Whisper** (via DeepInfra or Replicate) and classifies the output using **Gemini 1.5 & 3** (via Vertex AI). This app is optimized for Vercel, featuring high-speed transcription, intelligent classification, and persistent storage.
 
 ## Key Features
 
+- **Multi-Model Selection**: Choose between DeepInfra (Whisper) or Replicate (Insanely Fast Whisper) for transcription.
+- **Gemini 3 Support**: Integrated with Gemini 3 Flash and 3.1 Pro via Vertex AI.
+- **Context Caching**: 30-50% faster classification and 90% lower prompt costs by globally caching system instructions.
 - **50MB Uploads**: Bypasses the 4.5MB Vercel limit by uploading directly to Vercel Blob from the browser.
 - **Video Support**: Transcribe and classify `.mp4` and `.webm` files alongside traditional audio.
 - **Blob Library**: Browse and process files already stored in your Vercel cloud storage.
-- **External Support**: Capable of processing direct URLs from Azure Blob Storage or other providers.
 
 ## Setup
 
@@ -18,8 +20,16 @@ Transcribes audio and video using **Whisper** (via DeepInfra) and classifies the
 
 2. **Set environment variables** — create a `.env` file at the project root:
    ```
+   # Transcription
    DEEPINFRA_API_KEY=your_deepinfra_key_here
-   GEMINI_API_KEY=your_gemini_key_here
+   REPLICATE_API_TOKEN=your_replicate_token_here
+
+   # Vertex AI (Classification)
+   GOOGLE_CLOUD_PROJECT=your_project_id
+   GOOGLE_CLOUD_CLIENT_EMAIL=your_service_account_email
+   GOOGLE_CLOUD_PRIVATE_KEY="your_private_key_content"
+
+   # Storage
    BLOB_READ_WRITE_TOKEN=your_vercel_blob_token_here
    ```
 
@@ -31,12 +41,9 @@ Transcribes audio and video using **Whisper** (via DeepInfra) and classifies the
 
 ## Usage
 
-1. **Upload New**: Select any audio/video file and click **Log, Transcribe & Classify**.
+1. **Upload New**: Select any audio/video file and choose your preferred Transcription and Classification models.
 2. **Browse Library**: Click the library tab to see existing files in your cloud storage and process them instantly.
-3. **Results**:
-   - **Timings**: Detailed breakdown of Whisper vs. Gemini processing time.
-   - **Transcripts**: Full timestamped segments.
-   - **Classification**: Structured JSON based on a strict convenience store hierarchy.
+3. **Dashboard**: View timing comparisons between models and access historical classification results.
 
 ## Deploy to Vercel
 
@@ -44,6 +51,6 @@ Transcribes audio and video using **Whisper** (via DeepInfra) and classifies the
 vercel deploy
 ```
 
-Ensure your `BLOB_READ_WRITE_TOKEN` is configured in the Vercel dashboard.
+Ensure all your `.env` variables are configured in the Vercel dashboard.
 
-> Built with Next.js Server Actions and Vercel Blob — fully serverless.
+> Optimized with Vertex AI Context Caching and Next.js Server Actions.
