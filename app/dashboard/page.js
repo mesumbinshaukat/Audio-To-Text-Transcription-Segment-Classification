@@ -99,18 +99,23 @@ export default function DashboardPage() {
   const modelTimingData = useMemo(() => {
     const groups = {};
     filteredData.forEach(entry => {
-      const tModel = entry.transcriptionModel || 'Unknown Transcription';
-      const cModel = entry.classificationModel || 'Unknown Classification';
+      // Fall back to the known defaults for entries saved before model tracking was added
+      const tModel = entry.transcriptionModel || 'Whisper Large v3 (DeepInfra)';
+      const cModel = entry.classificationModel || 'Gemini 2.5 Flash';
       const key = `${tModel} + ${cModel}`;
       if (!groups[key]) {
         groups[key] = { name: key, transcriptionTimes: [], classificationTimes: [], tokenCounts: [] };
       }
       if (entry.whisperTime) groups[key].transcriptionTimes.push(parseFloat(entry.whisperTime));
       if (entry.geminiTime) groups[key].classificationTimes.push(parseFloat(entry.geminiTime));
-      if (entry.usage?.totalTokens) groups[key].tokenCounts.push(entry.usage.totalTokens);
+      // Use explicit prompt+candidates sum; fall back to totalTokens for legacy entries
+      const tokens = entry.usage
+        ? ((entry.usage.promptTokens || 0) + (entry.usage.candidatesTokens || 0)) || entry.usage.totalTokens || 0
+        : 0;
+      if (tokens) groups[key].tokenCounts.push(tokens);
     });
     return Object.values(groups).map(g => ({
-      name: g.name.length > 40 ? g.name.substring(0, 38) + '…' : g.name,
+      name: g.name.length > 40 ? g.name.substring(0, 38) + '\u2026' : g.name,
       fullName: g.name,
       avgTranscription: g.transcriptionTimes.length
         ? (g.transcriptionTimes.reduce((a, b) => a + b, 0) / g.transcriptionTimes.length).toFixed(2)
@@ -121,6 +126,7 @@ export default function DashboardPage() {
       avgTokens: g.tokenCounts.length
         ? Math.round(g.tokenCounts.reduce((a, b) => a + b, 0) / g.tokenCounts.length)
         : 0,
+      // Only count entries that actually have timing data as real "runs"
       count: Math.max(g.transcriptionTimes.length, g.classificationTimes.length),
     }));
   }, [filteredData]);

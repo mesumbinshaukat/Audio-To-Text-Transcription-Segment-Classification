@@ -317,11 +317,16 @@ export async function transcribeAction(
     const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
     geminiResult = JSON.parse(cleaned);
 
-    // Attach token usage for the UI
+    // Attach token usage for the UI.
+    // We compute totalTokens as the explicit sum of prompt + candidates so it
+    // matches what is displayed, rather than using totalTokenCount from the API
+    // which can include extra hidden tokens (cached, thinking, etc.).
+    const promptTokens = usage.promptTokenCount || 0;
+    const candidatesTokens = usage.candidatesTokenCount || 0;
     geminiResult.usage = {
-      promptTokens: usage.promptTokenCount || 0,
-      candidatesTokens: usage.candidatesTokenCount || 0,
-      totalTokens: usage.totalTokenCount || 0,
+      promptTokens,
+      candidatesTokens,
+      totalTokens: promptTokens + candidatesTokens,
     };
   } catch (err) {
     console.error('Gemini error:', err);
