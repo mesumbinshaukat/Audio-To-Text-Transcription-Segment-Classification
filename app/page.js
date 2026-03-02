@@ -3,22 +3,16 @@
 import { useState, useEffect } from 'react';
 import { upload } from '@vercel/blob/client';
 import { transcribeAction, listBlobsAction } from './actions';
+import { TRANSCRIPTION_MODELS, CLASSIFICATION_MODELS } from './models';
 import Link from 'next/link';
 
 /**
  * Available model options matching the backend definitions in actions.js
  */
-const TRANSCRIPTION_MODEL_OPTIONS = [
-  { id: 'deepinfra-whisper', label: 'Whisper Large v3 (DeepInfra)' },
-  { id: 'insanely-fast-whisper', label: 'Insanely Fast Whisper (Replicate)' },
-  { id: 'incredibly-fast-whisper', label: 'Incredibly Fast Whisper (Replicate)' },
-];
+// Derive dropdown options from the single source-of-truth in models.js
+const TRANSCRIPTION_MODEL_OPTIONS = Object.values(TRANSCRIPTION_MODELS).map(m => ({ id: m.id, label: m.label }));
+const CLASSIFICATION_MODEL_OPTIONS = Object.values(CLASSIFICATION_MODELS).map(m => ({ id: m.id, label: m.label }));
 
-const CLASSIFICATION_MODEL_OPTIONS = [
-  { id: 'gemini-3-flash', label: 'Gemini 3 Flash' },
-  { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Legacy)' },
-];
 
 /**
  * PulseLoader:
