@@ -315,7 +315,14 @@ export async function transcribeAction(
 
     // Strip markdown code fences if present
     const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-    geminiResult = JSON.parse(cleaned);
+
+    try {
+      geminiResult = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error('Gemini JSON Parse Error:', parseErr);
+      console.error('Raw Gemini Response (first 200 chars):', cleaned.substring(0, 200));
+      throw new Error(`Gemini returned invalid JSON. It might be an HTML error page. (Check server logs)`);
+    }
 
     // Attach token usage for the UI.
     // We compute totalTokens as the explicit sum of prompt + candidates so it
