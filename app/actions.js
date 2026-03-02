@@ -370,7 +370,10 @@ export async function transcribeAction(
 
     // Add thinking level for Gemini 3 models as requested
     if (vertexModel.includes('gemini-3')) {
-      genConfig.thinking_level = 'MINIMAL';
+      genConfig.thinking_config = {
+        include_thoughts: true,
+        thinking_level: 'MINIMAL'
+      };
     }
 
     const modelParams = {
