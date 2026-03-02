@@ -30,7 +30,7 @@ export const CLASSIFICATION_MODELS = {
     'gemini-3-flash': {
         id: 'gemini-3-flash',
         label: 'Gemini 3 Flash',
-        vertexModel: 'gemini-3-flash-preview',
+        vertexModel: 'gemini-3-flash',
     },
     // STABLE: The current reliable 2.5 series (Valid until June 2026)
     'gemini-2.5-flash': {
@@ -42,6 +42,6 @@ export const CLASSIFICATION_MODELS = {
     'gemini-3.1-pro': {
         id: 'gemini-3.1-pro',
         label: 'Gemini 3.1 Pro',
-        vertexModel: 'gemini-3.1-pro-preview',
+        vertexModel: 'gemini-3.1-pro',
     },
 };
