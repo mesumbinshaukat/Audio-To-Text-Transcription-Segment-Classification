@@ -3,8 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { getAnalyticsAction } from '../actions';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar
 } from 'recharts';
 import { Activity, ArrowLeft, Cpu, Filter, LayoutDashboard, Tag, TrendingUp, Download, Eye } from 'lucide-react';
@@ -23,7 +23,7 @@ const COLORS = {
 export default function DashboardPage() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Filtering States
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedTone, setSelectedTone] = useState('All');
@@ -71,7 +71,7 @@ export default function DashboardPage() {
         });
       });
     });
-    return Object.keys(counts).map(name => ({ name, value: counts[name] })).sort((a,b) => b.value - a.value).slice(0, 5);
+    return Object.keys(counts).map(name => ({ name, value: counts[name] })).sort((a, b) => b.value - a.value).slice(0, 5);
   }, [filteredData]);
 
   // Chart Data: Emotional Tone Distribution (Vertical Bar)
@@ -95,13 +95,43 @@ export default function DashboardPage() {
     }));
   }, [filteredData]);
 
+  // Chart Data: Model Timing Comparison
+  const modelTimingData = useMemo(() => {
+    const groups = {};
+    filteredData.forEach(entry => {
+      const tModel = entry.transcriptionModel || 'Unknown Transcription';
+      const cModel = entry.classificationModel || 'Unknown Classification';
+      const key = `${tModel} + ${cModel}`;
+      if (!groups[key]) {
+        groups[key] = { name: key, transcriptionTimes: [], classificationTimes: [], tokenCounts: [] };
+      }
+      if (entry.whisperTime) groups[key].transcriptionTimes.push(parseFloat(entry.whisperTime));
+      if (entry.geminiTime) groups[key].classificationTimes.push(parseFloat(entry.geminiTime));
+      if (entry.usage?.totalTokens) groups[key].tokenCounts.push(entry.usage.totalTokens);
+    });
+    return Object.values(groups).map(g => ({
+      name: g.name.length > 40 ? g.name.substring(0, 38) + '…' : g.name,
+      fullName: g.name,
+      avgTranscription: g.transcriptionTimes.length
+        ? (g.transcriptionTimes.reduce((a, b) => a + b, 0) / g.transcriptionTimes.length).toFixed(2)
+        : 0,
+      avgClassification: g.classificationTimes.length
+        ? (g.classificationTimes.reduce((a, b) => a + b, 0) / g.classificationTimes.length).toFixed(2)
+        : 0,
+      avgTokens: g.tokenCounts.length
+        ? Math.round(g.tokenCounts.reduce((a, b) => a + b, 0) / g.tokenCounts.length)
+        : 0,
+      count: Math.max(g.transcriptionTimes.length, g.classificationTimes.length),
+    }));
+  }, [filteredData]);
+
   // Chart Data: System Health (Radar) - Comparing metrics like Avg Confidence, Sentiment, Efficiency
   const healthData = useMemo(() => {
     if (filteredData.length === 0) return [];
     const totalSegments = filteredData.reduce((acc, f) => acc + (f.Segments?.length || 0), 0);
     const avgConfidence = filteredData.reduce((acc, f) => acc + (f.Segments?.reduce((a, s) => a + (s.SegmentClassification?.[0]?.classifyConfidenceScore || 0), 0) || 0), 0) / (totalSegments || 1);
     const avgSentiment = filteredData.reduce((acc, f) => acc + (f.Segments?.reduce((a, s) => a + Math.abs(s.SentimentScore || 0), 0) || 0), 0) / (totalSegments || 1);
-    
+
     return [
       { subject: 'Confidence', A: avgConfidence * 100, fullMark: 100 },
       { subject: 'Sentiment', A: avgSentiment * 100, fullMark: 100 },
@@ -138,7 +168,7 @@ export default function DashboardPage() {
             <h1 style={{ fontSize: '2rem', fontWeight: '800', letterSpacing: '-0.025em', margin: 0 }}>Intelligence Analytics</h1>
             <p style={{ color: COLORS.textMuted, marginTop: '0.25rem', fontSize: '0.9rem' }}>Comprehensive visualization of Gemini-processed store data.</p>
           </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
             <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, padding: '0.5rem 1rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <div style={{ width: '8px', height: '8px', background: '#10b981', borderRadius: '50%', animation: 'pulse 2s infinite' }}></div>
@@ -155,7 +185,7 @@ export default function DashboardPage() {
           <FilterGroup label="Category" value={selectedCategory} onChange={setSelectedCategory} options={categories} />
           <FilterGroup label="Emotional Tone" value={selectedTone} onChange={setSelectedTone} options={tones} />
           <FilterGroup label="Detected Intent" value={selectedIntent} onChange={setSelectedIntent} options={intents} />
-          <button 
+          <button
             onClick={() => { setSelectedCategory('All'); setSelectedTone('All'); setSelectedIntent('All'); }}
             style={{ padding: '0.5rem 1rem', background: 'transparent', border: 'none', color: COLORS.primary, fontWeight: '700', cursor: 'pointer', fontSize: '0.8rem' }}
           >
@@ -166,7 +196,7 @@ export default function DashboardPage() {
 
       {/* Main Grid */}
       <main style={{ maxWidth: '1400px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(1, 1fr)', lg: 'repeat(3, 1fr)', gap: '1.5rem' }}>
-        
+
         {/* Token/Sentiment Trend - Large Card */}
         <section style={{ gridColumn: 'span 1', lg: 'span 2', background: COLORS.card, border: `1px solid ${COLORS.border}`, padding: '1.5rem', borderRadius: '12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
@@ -175,7 +205,7 @@ export default function DashboardPage() {
               <p style={{ fontSize: '0.75rem', color: COLORS.textMuted }}>Metrics trend across the last 10 processed sessions</p>
             </div>
             <span style={{ background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: '700' }}>
-               +12.5% vs Prev
+              +12.5% vs Prev
             </span>
           </div>
           <div style={{ height: '320px' }}>
@@ -184,7 +214,7 @@ export default function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.border} />
                 <XAxis dataKey="name" stroke={COLORS.textMuted} fontSize={11} tickLine={false} axisLine={false} />
                 <YAxis stroke={COLORS.textMuted} fontSize={11} tickLine={false} axisLine={false} />
-                <RechartsTooltip 
+                <RechartsTooltip
                   contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: '8px' }}
                   itemStyle={{ color: COLORS.text }}
                 />
@@ -222,8 +252,8 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
           <div style={{ marginTop: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
-             <StatMini label="Avg Confidence" value="88%" color={COLORS.primary} />
-             <StatMini label="Risk Level" value="Low" color="#f87171" />
+            <StatMini label="Avg Confidence" value="88%" color={COLORS.primary} />
+            <StatMini label="Risk Level" value="Low" color="#f87171" />
           </div>
         </section>
 
@@ -272,13 +302,67 @@ export default function DashboardPage() {
                 <YAxis stroke={COLORS.textMuted} fontSize={10} axisLine={false} tickLine={false} />
                 <RechartsTooltip />
                 <Bar dataKey="value" fill={COLORS.primary} radius={[4, 4, 0, 0]} barSize={30}>
-                   {toneChartData.map((entry, index) => (
+                  {toneChartData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fillOpacity={0.4 + (index / toneChartData.length) * 0.6} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
+        </section>
+
+        {/* Model Timing Comparison - Full Width */}
+        <section style={{ gridColumn: 'span 1', background: COLORS.card, border: `1px solid ${COLORS.border}`, padding: '1.5rem', borderRadius: '12px' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: '700', margin: '0 0 0.25rem 0' }}>Model Timing Comparison</h2>
+          <p style={{ fontSize: '0.75rem', color: COLORS.textMuted, marginBottom: '1.5rem' }}>Average transcription & classification times per model combination (seconds)</p>
+          {modelTimingData.length === 0 ? (
+            <p style={{ color: COLORS.textMuted, fontSize: '0.85rem', textAlign: 'center', padding: '2rem 0' }}>No timing data available yet. Process files to see model performance.</p>
+          ) : (
+            <>
+              <div style={{ height: '260px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={modelTimingData} margin={{ bottom: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.border} />
+                    <XAxis dataKey="name" stroke={COLORS.textMuted} fontSize={10} axisLine={false} tickLine={false} angle={-20} textAnchor="end" interval={0} />
+                    <YAxis stroke={COLORS.textMuted} fontSize={10} axisLine={false} tickLine={false} unit="s" />
+                    <RechartsTooltip
+                      contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: '8px' }}
+                      itemStyle={{ color: COLORS.text }}
+                      formatter={(value, name) => [`${value}s`, name]}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                    <Bar dataKey="avgTranscription" name="Avg Transcription" fill={COLORS.primary} radius={[4, 4, 0, 0]} barSize={22} />
+                    <Bar dataKey="avgClassification" name="Avg Classification" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={22} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Summary table */}
+              <div style={{ marginTop: '1.25rem', overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', color: COLORS.text }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                      <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', color: COLORS.textMuted, fontWeight: '600' }}>Model Combo</th>
+                      <th style={{ textAlign: 'right', padding: '0.5rem 0.75rem', color: COLORS.textMuted, fontWeight: '600' }}>Avg Transcription</th>
+                      <th style={{ textAlign: 'right', padding: '0.5rem 0.75rem', color: COLORS.textMuted, fontWeight: '600' }}>Avg Classification</th>
+                      <th style={{ textAlign: 'right', padding: '0.5rem 0.75rem', color: COLORS.textMuted, fontWeight: '600' }}>Avg Tokens</th>
+                      <th style={{ textAlign: 'right', padding: '0.5rem 0.75rem', color: COLORS.textMuted, fontWeight: '600' }}>Runs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modelTimingData.map((row, i) => (
+                      <tr key={i} style={{ borderBottom: `1px solid ${COLORS.border}30` }}>
+                        <td style={{ padding: '0.5rem 0.75rem', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.fullName}>{row.fullName}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#4d7cfe', fontWeight: '700' }}>{row.avgTranscription}s</td>
+                        <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#6366f1', fontWeight: '700' }}>{row.avgClassification}s</td>
+                        <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{row.avgTokens.toLocaleString()}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: COLORS.textMuted }}>{row.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </section>
 
       </main>
@@ -302,11 +386,11 @@ function FilterGroup({ label, value, onChange, options }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
       <label style={{ fontSize: '0.7rem', color: COLORS.textMuted, fontWeight: '700', textTransform: 'uppercase' }}>{label}</label>
-      <select 
-        value={value} 
+      <select
+        value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ 
-          background: COLORS.surface, border: `1px solid ${COLORS.border}`, color: COLORS.text, 
+        style={{
+          background: COLORS.surface, border: `1px solid ${COLORS.border}`, color: COLORS.text,
           padding: '0.4rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem', outline: 'none',
           minWidth: '140px', cursor: 'pointer'
         }}

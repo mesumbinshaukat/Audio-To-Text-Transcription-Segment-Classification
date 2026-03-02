@@ -6,6 +6,21 @@ import { transcribeAction, listBlobsAction } from './actions';
 import Link from 'next/link';
 
 /**
+ * Available model options matching the backend definitions in actions.js
+ */
+const TRANSCRIPTION_MODEL_OPTIONS = [
+  { id: 'deepinfra-whisper', label: 'Whisper Large v3 (DeepInfra)' },
+  { id: 'insanely-fast-whisper', label: 'Insanely Fast Whisper (Replicate)' },
+  { id: 'incredibly-fast-whisper', label: 'Incredibly Fast Whisper (Replicate)' },
+];
+
+const CLASSIFICATION_MODEL_OPTIONS = [
+  { id: 'gemini-3-flash', label: 'Gemini 3 Flash' },
+  { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Legacy)' },
+];
+
+/**
  * PulseLoader:
  * A simple, beautiful loading animation that shows dots pulsing.
  * It also displays a helpful message so the user knows what's happening.
@@ -14,8 +29,8 @@ const PulseLoader = ({ message }) => (
   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', margin: '2rem 0' }}>
     <div style={{ display: 'flex', gap: '0.5rem' }}>
       {[0, 1, 2].map(i => (
-        <div 
-          key={i} 
+        <div
+          key={i}
           style={{
             width: '12px',
             height: '12px',
@@ -38,14 +53,47 @@ const PulseLoader = ({ message }) => (
 );
 
 /**
+ * ModelSelector:
+ * A clean dropdown for selecting a model.
+ */
+const ModelSelector = ({ label, value, onChange, options, disabled }) => (
+  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#444', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+      {label}
+    </label>
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      disabled={disabled}
+      style={{
+        padding: '0.55rem 0.75rem',
+        border: '1.5px solid #e0e0e0',
+        borderRadius: '6px',
+        fontSize: '0.85rem',
+        color: '#111',
+        background: disabled ? '#f5f5f5' : 'white',
+        cursor: disabled ? 'default' : 'pointer',
+        outline: 'none',
+        appearance: 'none',
+        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'right 0.75rem center',
+        paddingRight: '2rem',
+      }}
+    >
+      {options.map(opt => (
+        <option key={opt.id} value={opt.id}>{opt.label}</option>
+      ))}
+    </select>
+  </div>
+);
+
+/**
  * Page Component:
  * This is the heart of your application's user interface.
- * It manages everything you see on the screen: from picking files and 
- * browsing the library to displaying those final AI results.
  */
 export default function Page() {
-  // State variables house our data and UI status
-  const [view, setView] = useState('upload'); // 'upload' or 'library'
+  const [view, setView] = useState('upload');
   const [blobList, setBlobList] = useState([]);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -53,7 +101,10 @@ export default function Page() {
   const [timer, setTimer] = useState(0);
   const [error, setError] = useState('');
 
-  // Fetch the list of files when someone clicks the "Library" tab
+  // Model Selection State
+  const [transcriptionModel, setTranscriptionModel] = useState('deepinfra-whisper');
+  const [classificationModel, setClassificationModel] = useState('gemini-3-flash');
+
   const fetchBlobs = async () => {
     try {
       const blobs = await listBlobsAction();
@@ -72,16 +123,13 @@ export default function Page() {
 
   /**
    * handleFormSubmit:
-   * This is called when a user picks a BRAND NEW file from their computer.
-   * 1. It uploads the file to Vercel storage.
-   * 2. It then sends that URL to our AI for processing.
-   * 3. It automatically deletes the file afterward to save you storage space.
+   * Called when a user picks a BRAND NEW file from their computer.
    */
   const handleFormSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const audioFile = formData.get('audio');
-    
+
     if (!audioFile || audioFile.size === 0) {
       setError('Please select an audio file');
       return;
@@ -99,7 +147,6 @@ export default function Page() {
     }, 100);
 
     try {
-      // Step 1: Upload directly from browser to Vercel Blob to handle large files
       const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
       const blob = await upload(fileName, audioFile, {
         access: 'public',
@@ -108,8 +155,7 @@ export default function Page() {
 
       setLoadingMessage('Transcribing & Classifying...');
 
-      // Step 2: Pass the URL to the AI. "shouldCleanup" defaults to true here.
-      const res = await transcribeAction(blob.url);
+      const res = await transcribeAction(blob.url, true, transcriptionModel, classificationModel);
       clearInterval(interval);
 
       if (res.error) {
@@ -128,9 +174,7 @@ export default function Page() {
 
   /**
    * handleLibraryProcess:
-   * This is called when a user wants to process a file that is ALREADY in your storage.
-   * Since the file is already there, we skip the upload and go straight to AI.
-   * We also tell the AI NOT to delete the file after processing.
+   * Called when a user wants to process a file ALREADY in storage.
    */
   const handleLibraryProcess = async (blobUrl) => {
     setLoading(true);
@@ -145,8 +189,7 @@ export default function Page() {
     }, 100);
 
     try {
-      // Step 1: Just send the URL. pass "false" as the second argument to keep the file.
-      const res = await transcribeAction(blobUrl, false);
+      const res = await transcribeAction(blobUrl, false, transcriptionModel, classificationModel);
       clearInterval(interval);
 
       if (res.error) {
@@ -178,9 +221,38 @@ export default function Page() {
       <h1 style={{ marginBottom: '0.5rem', fontSize: '1.75rem', textAlign: 'center', color: '#111' }}>Audio Processor</h1>
       <p style={{ textAlign: 'center', color: '#666', marginBottom: '2rem', fontSize: '0.9rem' }}>Transcribe and classify audio or video files easily.</p>
 
+      {/* Model Selection */}
+      <div style={{
+        background: '#f8f9fc',
+        border: '1px solid #e8eaf0',
+        borderRadius: '10px',
+        padding: '1rem 1.25rem',
+        marginBottom: '1.5rem',
+      }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
+          ⚙️ Model Configuration
+        </div>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <ModelSelector
+            label="Transcription Model"
+            value={transcriptionModel}
+            onChange={setTranscriptionModel}
+            options={TRANSCRIPTION_MODEL_OPTIONS}
+            disabled={loading}
+          />
+          <ModelSelector
+            label="Classification Model"
+            value={classificationModel}
+            onChange={setClassificationModel}
+            options={CLASSIFICATION_MODEL_OPTIONS}
+            disabled={loading}
+          />
+        </div>
+      </div>
+
       {/* Switcher Buttons (Tabs) */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', background: '#f0f0f0', padding: '0.3rem', borderRadius: '8px' }}>
-        <button 
+        <button
           onClick={() => setView('upload')}
           style={{
             flex: 1, padding: '0.6rem', border: 'none', borderRadius: '6px', cursor: 'pointer',
@@ -192,7 +264,7 @@ export default function Page() {
         >
           Upload New
         </button>
-        <button 
+        <button
           onClick={() => setView('library')}
           style={{
             flex: 1, padding: '0.6rem', border: 'none', borderRadius: '6px', cursor: 'pointer',
@@ -209,11 +281,11 @@ export default function Page() {
       {/* Upload View */}
       {view === 'upload' && (
         <form onSubmit={handleFormSubmit}>
-          <div style={{ 
-            border: '2px dashed #e0e0e0', 
-            borderRadius: '8px', 
-            padding: '2rem', 
-            textAlign: 'center', 
+          <div style={{
+            border: '2px dashed #e0e0e0',
+            borderRadius: '8px',
+            padding: '2rem',
+            textAlign: 'center',
             marginBottom: '1.5rem',
             background: '#fafafa'
           }}>
@@ -257,14 +329,14 @@ export default function Page() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {blobList.map((blob, i) => (
-                <div key={i} style={{ 
+                <div key={i} style={{
                   background: 'white', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e0e0e0',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                 }}>
                   <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
                     <span style={{ fontSize: '0.85rem', fontWeight: '500', color: '#111' }}>{blob.pathname}</span>
                   </div>
-                  <button 
+                  <button
                     disabled={loading}
                     onClick={() => handleLibraryProcess(blob.url)}
                     style={{
@@ -285,8 +357,8 @@ export default function Page() {
       {loading && <PulseLoader message={loadingMessage} />}
 
       {error && (
-        <div style={{ 
-          marginTop: '1.5rem', padding: '1rem', background: '#fff5f5', border: '1px solid #feb2b2', 
+        <div style={{
+          marginTop: '1.5rem', padding: '1rem', background: '#fff5f5', border: '1px solid #feb2b2',
           borderRadius: '6px', color: '#c53030', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem'
         }}>
           <strong>⚠️ Error:</strong> {error}
@@ -295,31 +367,43 @@ export default function Page() {
 
       {result && !loading && (
         <div style={{ marginTop: '2rem', borderTop: '1px solid #eee', paddingTop: '1.5rem' }}>
+
+          {/* Model Used Banner */}
+          <div style={{
+            background: '#f0f7ff', border: '1px solid #dbeafe', borderRadius: '8px',
+            padding: '0.6rem 1rem', marginBottom: '1.25rem',
+            display: 'flex', gap: '1.5rem', flexWrap: 'wrap',
+            fontSize: '0.8rem', color: '#1e40af'
+          }}>
+            <span>🎙️ <strong>Transcription:</strong> {result.transcriptionModel}</span>
+            <span>🤖 <strong>Classification:</strong> {result.classificationModel}</span>
+          </div>
+
           {/* Timing Summary */}
-          <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-            <div style={{ flex: 1, background: '#f0f7ff', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #e1effe' }}>
-              <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.025em' }}>Whisper Time</div>
+          <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: '100px', background: '#f0f7ff', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #e1effe' }}>
+              <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.025em' }}>Transcription</div>
               <div style={{ fontSize: '1.75rem', fontWeight: '800', color: '#1c64f2' }}>{result.whisperTime}s</div>
             </div>
-            <div style={{ flex: 1, background: '#f3faf7', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #def7ec' }}>
-              <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.025em' }}>Gemini Time</div>
+            <div style={{ flex: 1, minWidth: '100px', background: '#f3faf7', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #def7ec' }}>
+              <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.025em' }}>Classification</div>
               <div style={{ fontSize: '1.75rem', fontWeight: '800', color: '#057a55' }}>
                 {result.geminiError ? 'Error' : result.geminiTime + 's'}
               </div>
             </div>
             {result.geminiResult?.usage && (
               <>
-                <div style={{ flex: 1, background: '#fff7ed', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #ffedd5' }}>
+                <div style={{ flex: 1, minWidth: '100px', background: '#fff7ed', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #ffedd5' }}>
                   <div style={{ fontSize: '0.7rem', color: '#c2410c', fontWeight: '700', textTransform: 'uppercase' }}>Input Tokens</div>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#9a3412' }}>{result.geminiResult.usage.promptTokens}</div>
                 </div>
-                <div style={{ flex: 1, background: '#eff6ff', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #dbeafe' }}>
+                <div style={{ flex: 1, minWidth: '100px', background: '#eff6ff', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #dbeafe' }}>
                   <div style={{ fontSize: '0.7rem', color: '#1d4ed8', fontWeight: '700', textTransform: 'uppercase' }}>Output Tokens</div>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#1e40af' }}>{result.geminiResult.usage.candidatesTokens}</div>
                 </div>
               </>
             )}
-            <div style={{ flex: 1, background: '#f9fafb', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #f3f4f6' }}>
+            <div style={{ flex: 1, minWidth: '100px', background: '#f9fafb', borderRadius: '10px', padding: '1rem', textAlign: 'center', border: '1px solid #f3f4f6' }}>
               <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.025em' }}>Total Time</div>
               <div style={{ fontSize: '1.75rem', fontWeight: '800', color: '#374151' }}>
                 {(parseFloat(result.whisperTime) + parseFloat(result.geminiTime || 0)).toFixed(2)}s
@@ -327,11 +411,10 @@ export default function Page() {
             </div>
           </div>
 
-
           {/* Whisper Segments */}
           <details open>
             <summary style={{ fontWeight: 'bold', cursor: 'pointer', marginBottom: '0.75rem' }}>
-              Whisper Transcription ({result.segments.length} segments)
+              Transcription ({result.segments.length} segments)
             </summary>
             <div style={{ maxHeight: '300px', overflowY: 'auto', background: '#f8f9fa', borderRadius: '6px', padding: '0.75rem' }}>
               {result.segments.length > 0 ? (
@@ -352,10 +435,10 @@ export default function Page() {
           {/* Gemini Classification Output */}
           <details style={{ marginTop: '1rem' }}>
             <summary style={{ fontWeight: 'bold', cursor: 'pointer', marginBottom: '0.75rem' }}>
-              Gemini Classification Output
+              Classification Output ({result.classificationModel})
             </summary>
             {result.geminiError ? (
-              <p style={{ color: 'red', fontSize: '0.9rem' }}>Gemini error: {result.geminiError}</p>
+              <p style={{ color: 'red', fontSize: '0.9rem' }}>Classification error: {result.geminiError}</p>
             ) : (
               <pre style={{ background: '#f8f9fa', borderRadius: '6px', padding: '0.75rem', overflowX: 'auto', fontSize: '0.8rem', maxHeight: '500px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {JSON.stringify(result.geminiResult, null, 2)}

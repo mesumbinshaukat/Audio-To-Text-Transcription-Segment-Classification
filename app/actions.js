@@ -2,6 +2,7 @@
 
 import { VertexAI } from '@google-cloud/vertexai';
 import { del, list, put } from '@vercel/blob';
+import Replicate from 'replicate';
 
 const RESULTS_FILE = 'history/results.json';
 
@@ -20,6 +21,61 @@ const vertex_ai = new VertexAI({
     }
   }
 });
+
+/**
+ * REPLICATE CLIENT:
+ * Used for running insanely-fast-whisper-with-video and incredibly-fast-whisper models.
+ */
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
+});
+
+/**
+ * TRANSCRIPTION MODEL DEFINITIONS
+ */
+export const TRANSCRIPTION_MODELS = {
+  'deepinfra-whisper': {
+    id: 'deepinfra-whisper',
+    label: 'OpenAI Whisper Large v3 (DeepInfra)',
+    provider: 'deepinfra',
+  },
+  'insanely-fast-whisper': {
+    id: 'insanely-fast-whisper',
+    label: 'Insanely Fast Whisper (Replicate)',
+    provider: 'replicate',
+    replicateModel: 'turian/insanely-fast-whisper-with-video:4f41e90243af171da918f04da3e526b2c247065583ea9b757f2071f573965408',
+  },
+  'incredibly-fast-whisper': {
+    id: 'incredibly-fast-whisper',
+    label: 'Incredibly Fast Whisper (Replicate)',
+    provider: 'replicate',
+    replicateModel: 'vaibhavs10/incredibly-fast-whisper:3ab86df6c8f54c11309d4d1f930ac292bad43ace52d10c80d87eb258b3c9f79c',
+  },
+};
+
+/**
+ * CLASSIFICATION MODEL DEFINITIONS
+ */
+export const CLASSIFICATION_MODELS = {
+  // The current best "Flash" model for speed/cost
+  'gemini-3-flash': {
+    id: 'gemini-3-flash',
+    label: 'Gemini 3 Flash',
+    vertexModel: 'gemini-3-flash',
+  },
+  // The current state-of-the-art for reasoning
+  'gemini-3.1-pro': {
+    id: 'gemini-3.1-pro-preview',
+    label: 'Gemini 3.1 Pro',
+    vertexModel: 'gemini-3.1-pro-preview',
+  },
+  // Legacy support for the 2.5 series (valid until mid-2026)
+  'gemini-2.5-flash': {
+    id: 'gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash',
+    vertexModel: 'gemini-2.5-flash',
+  },
+};
 
 /**
  * GEMINI_PROMPT:
@@ -129,7 +185,7 @@ export async function listBlobsAction() {
   try {
     const { blobs } = await list({ limit: 20 });
     // Filter to only show common audio and video files
-    return blobs.filter(blob => 
+    return blobs.filter(blob =>
       blob.pathname.match(/\.(mp3|wav|mp4|webm|m4a|ogg)$/i)
     );
   } catch (error) {
@@ -139,65 +195,136 @@ export async function listBlobsAction() {
 }
 
 /**
- * transcribeAction:
- * This is the main engine. It takes a URL of an audio/video file,
- * sends it to the Whisper AI for transcription, then sends that text to Gemini for classification.
- * 
- * @param {string} audioUrl - The direct link to the file (from Vercel, Azure, etc.)
- * @param {boolean} shouldCleanup - If true, the file is deleted after processing (default: true). 
- * Set to false when processing files already stored in your Library.
+ * transcribeWithDeepInfra:
+ * Transcribes audio using the DeepInfra Whisper API (original method).
  */
-export async function transcribeAction(audioUrl, shouldCleanup = true) {
+async function transcribeWithDeepInfra(audioUrl) {
+  const isVercelBlob = audioUrl.includes('blob.vercel-storage.com');
+  const fetchOptions = isVercelBlob ? {
+    headers: { 'Authorization': `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` }
+  } : {};
+
+  const audioRes = await fetch(audioUrl, fetchOptions);
+  if (!audioRes.ok) throw new Error(`Failed to fetch audio (${audioRes.status})`);
+
+  const audioBlob = await audioRes.blob();
+  const data = new FormData();
+  data.append('file', audioBlob, 'audio.mp3');
+  data.append('model', 'openai/whisper-large-v3');
+  data.append('response_format', 'verbose_json');
+
+  const response = await fetch('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + process.env.DEEPINFRA_API_KEY },
+    body: data,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`Whisper API error (${response.status}): ${errorData.error?.message || response.statusText}`);
+  }
+
+  const json = await response.json();
+  // Return in standard format: { text, segments }
+  return {
+    text: json.text,
+    segments: (json.segments || []).map(seg => ({
+      start: seg.start,
+      end: seg.end,
+      text: seg.text,
+    })),
+  };
+}
+
+/**
+ * transcribeWithReplicate:
+ * Transcribes audio using one of two Replicate-hosted Whisper models.
+ * Handles differences in output format between the two models.
+ */
+async function transcribeWithReplicate(audioUrl, replicateModel) {
+  const output = await replicate.run(replicateModel, {
+    input: {
+      audio: audioUrl,
+      batch_size: 64,
+    }
+  });
+
+  // Both models return chunks/segments with timestamps
+  // Normalize to our standard format { text, segments }
+  let text = '';
+  let segments = [];
+
+  if (output) {
+    // vaibhavs10/incredibly-fast-whisper returns { text, chunks }
+    // turian/insanely-fast-whisper-with-video returns { text, chunks } or similar
+    if (typeof output === 'object') {
+      text = output.text || output.transcription || '';
+
+      const chunks = output.chunks || output.segments || [];
+      segments = chunks.map((chunk, i) => {
+        // chunks can have { timestamp: [start, end], text } or { start, end, text }
+        const start = Array.isArray(chunk.timestamp) ? chunk.timestamp[0] : (chunk.start || 0);
+        const end = Array.isArray(chunk.timestamp) ? chunk.timestamp[1] : (chunk.end || 0);
+        return {
+          start: start || 0,
+          end: end || 0,
+          text: chunk.text || '',
+        };
+      });
+
+      // If text is empty but we have segments, build it from segments
+      if (!text && segments.length > 0) {
+        text = segments.map(s => s.text).join(' ').trim();
+      }
+    } else if (typeof output === 'string') {
+      text = output;
+    }
+  }
+
+  return { text, segments };
+}
+
+/**
+ * transcribeAction:
+ * This is the main engine. It takes a URL of an audio/video file and model selections,
+ * sends it to the chosen transcription model, then sends that text to the chosen Gemini model for classification.
+ * 
+ * @param {string} audioUrl - The direct link to the file
+ * @param {boolean} shouldCleanup - If true, the file is deleted after processing (default: true)
+ * @param {string} transcriptionModelId - The transcription model to use (default: 'deepinfra-whisper')
+ * @param {string} classificationModelId - The Gemini model to use for classification (default: 'gemini-2.5-flash')
+ */
+export async function transcribeAction(
+  audioUrl,
+  shouldCleanup = true,
+  transcriptionModelId = 'deepinfra-whisper',
+  classificationModelId = 'gemini-3-flash'
+) {
   if (!audioUrl) return { error: 'No audio URL provided' };
 
-  // --- Step 1: Whisper Transcription ---
-  // Here we use Whisper to turn the audio/video into timestamped text segments.
+  const transcriptionModelConfig = TRANSCRIPTION_MODELS[transcriptionModelId] || TRANSCRIPTION_MODELS['deepinfra-whisper'];
+  const classificationModelConfig = CLASSIFICATION_MODELS[classificationModelId] || CLASSIFICATION_MODELS['gemini-3-flash'];
+
+  // --- Step 1: Transcription ---
   const whisperStart = Date.now();
+  let transcriptionResult;
 
-  let whisperResult;
   try {
-    // Fetch the file from the provided URL (Vercel, Azure, etc.)
-    const isVercelBlob = audioUrl.includes('blob.vercel-storage.com');
-    const fetchOptions = isVercelBlob ? {
-      headers: {
-        'Authorization': `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`
-      }
-    } : {};
-
-    const audioRes = await fetch(audioUrl, fetchOptions);
-    if (!audioRes.ok) throw new Error(`Failed to fetch audio from ${isVercelBlob ? 'Vercel' : 'External Storage'} (${audioRes.status})`);
-
-
-    const audioBlob = await audioRes.blob();
-
-    const data = new FormData();
-    data.append('file', audioBlob, 'audio.mp3');
-    data.append('model', 'openai/whisper-large-v3');
-    data.append('response_format', 'verbose_json');
-
-    const response = await fetch('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + process.env.DEEPINFRA_API_KEY,
-      },
-      body: data,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      return { 
-        error: `Whisper API error (${response.status}): ${errorData.error?.message || response.statusText || 'Unknown error'}` 
-      };
+    if (transcriptionModelConfig.provider === 'replicate') {
+      transcriptionResult = await transcribeWithReplicate(audioUrl, transcriptionModelConfig.replicateModel);
+    } else {
+      // Default: DeepInfra Whisper
+      transcriptionResult = await transcribeWithDeepInfra(audioUrl);
     }
-
-    const json = await response.json();
-    whisperResult = json;
   } catch (error) {
-    console.error('Whisper Processing Error:', error);
+    console.error('Transcription Error:', error);
+    // Ensure cleanup still happens on error
+    if (shouldCleanup && audioUrl.includes('blob.vercel-storage.com')) {
+      try { await del(audioUrl); } catch (_) { }
+    }
     return { error: `Transcription failed: ${error.message}` };
   } finally {
     // Cleanup: Delete the blob from Vercel storage if requested
-    // This happens automatically for fresh "on-the-fly" uploads to save space.
     if (shouldCleanup) {
       try {
         await del(audioUrl);
@@ -213,23 +340,19 @@ export async function transcribeAction(audioUrl, shouldCleanup = true) {
   const whisperTime = ((Date.now() - whisperStart) / 1000).toFixed(2);
 
   // Build timestamped transcription string for Gemini
-  const segments = whisperResult.segments || [];
+  const segments = transcriptionResult.segments || [];
   const timestampedText = segments
-    .map(seg => `${seg.start.toFixed(2)} - ${seg.end.toFixed(2)} ${seg.text.trim()}`)
+    .map(seg => `${(seg.start || 0).toFixed(2)} - ${(seg.end || 0).toFixed(2)} ${seg.text.trim()}`)
     .join('\n');
 
   // --- Step 2: Gemini Classification ---
-  // Now we send that text to Gemini to categorize the conversation (Transactional, Security, etc.)
   const geminiStart = Date.now();
-
   let geminiResult = null;
   let geminiError = null;
 
   try {
-    // We use the Vertex AI model to categorize the conversation.
-    const model = vertex_ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
-    const prompt = GEMINI_PROMPT + timestampedText;
+    const model = vertex_ai.getGenerativeModel({ model: classificationModelConfig.vertexModel });
+    const prompt = GEMINI_PROMPT + (timestampedText || transcriptionResult.text || '');
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const usage = response.usageMetadata || {};
@@ -253,19 +376,25 @@ export async function transcribeAction(audioUrl, shouldCleanup = true) {
   const geminiTime = ((Date.now() - geminiStart) / 1000).toFixed(2);
 
   const finalResult = {
-    text: whisperResult.text,
+    text: transcriptionResult.text,
     segments,
     whisperTime,
     geminiTime,
     geminiResult,
     geminiError,
+    transcriptionModel: transcriptionModelConfig.label,
+    classificationModel: classificationModelConfig.label,
   };
 
   // --- Step 3: Auto-Save to History ---
-  // If we have a successful classification, we persist it to our results.json file.
   if (geminiResult && !geminiError) {
     try {
-      await saveClassificationAction(geminiResult);
+      await saveClassificationAction(geminiResult, {
+        whisperTime,
+        geminiTime,
+        transcriptionModel: transcriptionModelConfig.label,
+        classificationModel: classificationModelConfig.label,
+      });
     } catch (saveErr) {
       console.error('[transcribe] Failed to auto-save result:', saveErr);
     }
@@ -277,19 +406,17 @@ export async function transcribeAction(audioUrl, shouldCleanup = true) {
 /**
  * saveClassificationAction:
  * Persists a successful classification result into a global results.json file in Vercel Blob.
- * This acts as our "simple database" for the dashboard.
+ * Now also stores timing data and selected model names for dashboard comparison.
  */
-export async function saveClassificationAction(classificationData) {
+export async function saveClassificationAction(classificationData, timingData = {}) {
   if (!classificationData) return { error: 'No data to save' };
 
   try {
     // 1. Fetch existing history or start fresh
     let history = [];
     const { blobs } = await list({ prefix: 'history/' });
-    // Look for the specific file name in the list of blobs - search for exact pathname first
     let existingFile = blobs.find(b => b.pathname === RESULTS_FILE);
-    
-    // Fallback: if not found by exact name, look for anything matching results.json in history/
+
     if (!existingFile) {
       existingFile = blobs.find(b => b.pathname.includes('results.json'));
     }
@@ -301,10 +428,18 @@ export async function saveClassificationAction(classificationData) {
       }
     }
 
-    // 2. Append new record with a unique ID and timestamp
+    // 2. Append new record with a unique ID, timestamp, and timing/model info
     const newEntry = {
       id: Date.now().toString(),
       timestamp: new Date().toISOString(),
+      // Timing and model metadata
+      whisperTime: timingData.whisperTime || null,
+      geminiTime: timingData.geminiTime || null,
+      transcriptionModel: timingData.transcriptionModel || 'OpenAI Whisper Large v3 (DeepInfra)',
+      classificationModel: timingData.classificationModel || 'Gemini 2.5 Flash',
+      totalTime: timingData.whisperTime && timingData.geminiTime
+        ? (parseFloat(timingData.whisperTime) + parseFloat(timingData.geminiTime)).toFixed(2)
+        : null,
       ...classificationData
     };
 
@@ -314,8 +449,8 @@ export async function saveClassificationAction(classificationData) {
     await put(RESULTS_FILE, JSON.stringify(history, null, 2), {
       access: 'public',
       contentType: 'application/json',
-      addRandomSuffix: false, // Maintain same file path
-      allowOverwrite: true,   // Allow updating the existing file
+      addRandomSuffix: false,
+      allowOverwrite: true,
     });
 
     console.log('[save] Persisted classification to history');
