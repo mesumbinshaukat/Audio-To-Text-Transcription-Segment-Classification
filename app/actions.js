@@ -32,6 +32,58 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
 
+/**
+ * CONTEXT CACHING TRACKER:
+ * We store the resource names of our caches in memory to avoid 
+ * re-listing or re-creating them on every request.
+ */
+const modelCaches = {};
+
+/**
+ * getOrCreateCachedContent:
+ * Ensures the static GEMINI_PROMPT is cached in Vertex AI for the given model.
+ * Returns the full resource name of the cache.
+ */
+async function getOrCreateCachedContent(vertexModelId) {
+  // 1. Check in-memory first
+  if (modelCaches[vertexModelId]) {
+    return modelCaches[vertexModelId];
+  }
+
+  const cacheDisplayName = `conv-store-prompt-${vertexModelId}`;
+
+  try {
+    // 2. Check if it already exists in Vertex AI
+    const listResponse = await vertex_ai.preview.cachedContents.list();
+    const existing = listResponse.cachedContents?.find(c => c.displayName === cacheDisplayName);
+
+    if (existing) {
+      console.log(`[Gemini Cache] Reusing existing cache for ${vertexModelId}: ${existing.name}`);
+      modelCaches[vertexModelId] = existing.name;
+      return existing.name;
+    }
+
+    // 3. Create new cache if missing
+    console.log(`[Gemini Cache] Creating new cache for ${vertexModelId}...`);
+    const newCache = await vertex_ai.preview.cachedContents.create({
+      model: `projects/${process.env.GOOGLE_CLOUD_PROJECT}/locations/global/publishers/google/models/${vertexModelId}`,
+      displayName: cacheDisplayName,
+      systemInstruction: {
+        role: 'system',
+        parts: [{ text: GEMINI_PROMPT }]
+      },
+      ttl: '10800s', // 3 hours
+    });
+
+    modelCaches[vertexModelId] = newCache.name;
+    return newCache.name;
+  } catch (err) {
+    console.error('[Gemini Cache] Error managing cache:', err);
+    // Fallback to no cache if this fails (don't break the whole app)
+    return null;
+  }
+}
+
 
 /**
  * GEMINI_PROMPT:
@@ -307,8 +359,40 @@ export async function transcribeAction(
   let geminiError = null;
 
   try {
-    const model = vertex_ai.getGenerativeModel({ model: classificationModelConfig.vertexModel });
-    const prompt = GEMINI_PROMPT + (timestampedText || transcriptionResult.text || '');
+    const vertexModel = classificationModelConfig.vertexModel;
+
+    // Use Context Caching to speed up classification
+    const cachedContentName = await getOrCreateCachedContent(vertexModel);
+
+    const genConfig = {
+      responseMimeType: "application/json",
+    };
+
+    // Add thinking level for Gemini 3 models as requested
+    if (vertexModel.includes('gemini-3')) {
+      genConfig.thinking_level = 'MINIMAL';
+    }
+
+    const modelParams = {
+      model: vertexModel,
+      generationConfig: genConfig,
+    };
+
+    // If we have a cache, use the preview method to instantiate
+    let model;
+    if (cachedContentName) {
+      model = vertex_ai.preview.getGenerativeModel({
+        ...modelParams,
+        cachedContent: { name: cachedContentName }
+      });
+    } else {
+      model = vertex_ai.getGenerativeModel({
+        ...modelParams,
+        systemInstruction: GEMINI_PROMPT
+      });
+    }
+
+    const prompt = (timestampedText || transcriptionResult.text || '');
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const usage = response.usageMetadata || {};
