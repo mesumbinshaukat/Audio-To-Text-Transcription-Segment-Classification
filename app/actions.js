@@ -253,12 +253,12 @@ export async function transcribeAction(
   audioUrl,
   shouldCleanup = true,
   transcriptionModelId = 'deepinfra-whisper',
-  classificationModelId = 'gemini-3-flash'
+  classificationModelId = 'gemini-2.5-flash'
 ) {
   if (!audioUrl) return { error: 'No audio URL provided' };
 
   const transcriptionModelConfig = TRANSCRIPTION_MODELS[transcriptionModelId] || TRANSCRIPTION_MODELS['deepinfra-whisper'];
-  const classificationModelConfig = CLASSIFICATION_MODELS[classificationModelId] || CLASSIFICATION_MODELS['gemini-3-flash'];
+  const classificationModelConfig = CLASSIFICATION_MODELS[classificationModelId] || CLASSIFICATION_MODELS['gemini-2.5-flash'];
 
   // --- Step 1: Transcription ---
   const whisperStart = Date.now();

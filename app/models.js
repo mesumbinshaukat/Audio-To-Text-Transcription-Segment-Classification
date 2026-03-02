@@ -26,22 +26,22 @@ export const TRANSCRIPTION_MODELS = {
 };
 
 export const CLASSIFICATION_MODELS = {
-    // The current best "Flash" model for speed/cost
+    // RECOMMENDED: The latest frontier-class model (Released Feb 2026)
     'gemini-3-flash': {
         id: 'gemini-3-flash',
         label: 'Gemini 3 Flash',
-        vertexModel: 'gemini-3-flash',
+        vertexModel: 'gemini-3-flash-preview',
     },
-    // The current state-of-the-art for reasoning
-    'gemini-3.1-pro': {
-        id: 'gemini-3.1-pro-preview',
-        label: 'Gemini 3.1 Pro',
-        vertexModel: 'gemini-3.1-pro-preview',
-    },
-    // Legacy support for the 2.5 series (valid until mid-2026)
+    // STABLE: The current reliable 2.5 series (Valid until June 2026)
     'gemini-2.5-flash': {
         id: 'gemini-2.5-flash',
         label: 'Gemini 2.5 Flash',
         vertexModel: 'gemini-2.5-flash',
+    },
+    // REPLACEMENT FOR PRO: Latest reasoning model
+    'gemini-3.1-pro': {
+        id: 'gemini-3.1-pro',
+        label: 'Gemini 3.1 Pro',
+        vertexModel: 'gemini-3.1-pro-preview',
     },
 };

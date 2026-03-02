@@ -97,7 +97,7 @@ export default function Page() {
 
   // Model Selection State
   const [transcriptionModel, setTranscriptionModel] = useState('deepinfra-whisper');
-  const [classificationModel, setClassificationModel] = useState('gemini-3-flash');
+  const [classificationModel, setClassificationModel] = useState('gemini-2.5-flash');
 
   const fetchBlobs = async () => {
     try {
