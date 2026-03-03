@@ -12,7 +12,7 @@ This document provides a deep dive into the technical architecture, optimization
    - [Transcription Pipeline](#transcription-pipeline)
    - [Classification Engine (Vertex AI)](#classification-engine-vertex-ai)
 4. [Vertex AI Optimization Deep Dive](#vertex-ai-optimization-deep-dive)
-   - [Global Location & Explicit Endpoint](#global-location--explicit-endpoint)
+   - [Dynamic Regional Routing](#dynamic-regional-routing)
    - [Implicit Caching](#implicit-caching)
    - [Gemini 3 "Thinking" Configuration](#gemini-3-thinking-configuration)
 5. [Replicate Model Integration](#replicate-model-integration)
@@ -68,19 +68,14 @@ Once transcription is complete, the timestamped segments are passed to Gemini. T
 
 ## Vertex AI Optimization Deep Dive
 
-### Global Location & Explicit Endpoint
-Gemini 3 preview models (`gemini-3-flash-preview`, `gemini-3.1-pro-preview`) often require the `global` location to avoid `404 Not Found` errors in regional endpoints like `us-central1`.
+### Dynamic Regional Routing
+To optimize latency and comply with model availability, the application dynamically selects the Vertex AI region based on the chosen model:
 
-**Critical Implementation Detail:**
-When using `location: 'global'`, the `@google-cloud/vertexai` SDK must be initialized with an explicit `apiEndpoint`:
-```javascript
-const vertex_ai = new VertexAI({
-  project: process.env.GOOGLE_CLOUD_PROJECT,
-  location: 'global',
-  apiEndpoint: 'aiplatform.googleapis.com', // Required for global routing
-  googleAuthOptions: { ... }
-});
-```
+- **Gemini 3 Preview Models**: Routed to `location: 'global'` with `apiEndpoint: 'aiplatform.googleapis.com'`.
+- **Gemini 2.x Models**: Routed to `location: 'asia-south1'` with `apiEndpoint: 'asia-south1-aiplatform.googleapis.com'` for better performance in the local region.
+
+**Implementation:**
+The `getVertexAIInstance(location)` helper in `actions.js` manages these instances and ensures the correct `apiEndpoint` is set for each region.
 
 ### Implicit Caching
 Rather than manually managing `CachedContent` resources (which is unsupported in the JS SDK's `global` endpoint), the application uses the standard `systemInstruction` field. 
@@ -90,14 +85,18 @@ Rather than manually managing `CachedContent` resources (which is unsupported in
 - When the same system instructions are used across multiple requests, Vertex AI automatically recognizes the pattern.
 - This results in a **90% cost reduction** on redundant tokens and significantly faster "Time to First Token" without the complexity of manual TTL settings or resource listing.
 
-### Gemini 3 "Thinking" Configuration
-Gemini 3 models introduced a "Thinking" feature. If configured incorrectly at the top level, it returns a `400 Bad Request`. It **must** be nested inside `thinking_config` within `generationConfig`:
+#### Thinking Configuration (Gemini 3)
+Gemini 3 models support a "Thinking" feature, configured using `thinkingConfig`:
+- **Model-Specific Levels**: `MINIMAL` for Gemini 3 Flash, `LOW` for Gemini 3.1 Pro.
+- **CamelCase Requirement**: Use `thinkingConfig` and `includeThoughts: false` as required by the Vertex AI client.
 
 ```javascript
-genConfig.thinking_config = {
-  include_thoughts: true,
-  thinking_level: 'MINIMAL' // Options: MINIMAL, LOW, MEDIUM, HIGH
-};
+generationConfig: {
+  thinkingConfig: {
+    includeThoughts: false,
+    thinkingLevel: vertexModel === 'gemini-3-flash-preview' ? 'MINIMAL' : 'LOW'
+  }
+}
 ```
 
 ---

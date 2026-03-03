@@ -38,6 +38,12 @@ export const CLASSIFICATION_MODELS = {
         label: 'Gemini 2.5 Flash',
         vertexModel: 'gemini-2.5-flash',
     },
+    // ULTRA-LOW LATENCY: Optimized for speed
+    'gemini-2.5-flash-lite': {
+        id: 'gemini-2.5-flash-lite',
+        label: 'Gemini 2.5 Flash-Lite (Low Latency)',
+        vertexModel: 'gemini-2.5-flash-lite',
+    },
     // REPLACEMENT FOR PRO: Latest reasoning model
     'gemini-3.1-pro': {
         id: 'gemini-3.1-pro',

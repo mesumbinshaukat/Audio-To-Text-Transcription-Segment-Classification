@@ -7,22 +7,31 @@ import { TRANSCRIPTION_MODELS, CLASSIFICATION_MODELS } from './models';
 
 const RESULTS_FILE = 'history/results.json';
 
-/**
- * GEMINI AI ENGINE (Vertex AI):
- * We initialize the Google Vertex AI client using the Service Account 
- * credentials (Project ID, Email, and Private Key) stored in our .env file.
- */
-const vertex_ai = new VertexAI({
-  project: process.env.GOOGLE_CLOUD_PROJECT,
-  location: 'global',
-  apiEndpoint: 'aiplatform.googleapis.com',
-  googleAuthOptions: {
-    credentials: {
-      client_email: process.env.GOOGLE_CLOUD_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_CLOUD_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+// We will initialize VertexAI dynamically inside the action to support multiple locations.
+let vertex_ai_instances = {};
+
+function getVertexAIInstance(location = 'global') {
+  if (vertex_ai_instances[location]) return vertex_ai_instances[location];
+
+  const apiEndpoint = location === 'global'
+    ? 'aiplatform.googleapis.com'
+    : `${location}-aiplatform.googleapis.com`;
+
+  const instance = new VertexAI({
+    project: process.env.GOOGLE_CLOUD_PROJECT,
+    location: location,
+    apiEndpoint: apiEndpoint,
+    googleAuthOptions: {
+      credentials: {
+        client_email: process.env.GOOGLE_CLOUD_CLIENT_EMAIL,
+        private_key: process.env.GOOGLE_CLOUD_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      }
     }
-  }
-});
+  });
+
+  vertex_ai_instances[location] = instance;
+  return instance;
+}
 
 /**
  * REPLICATE CLIENT:
@@ -200,7 +209,8 @@ async function transcribeWithReplicate(audioUrl, replicateModel) {
   const output = await replicate.run(replicateModel, {
     input: {
       audio: audioUrl,
-      batch_size: 64,
+      batch_size: 16, // Better accuracy than 64
+      beam_size: 5,   // Improved quality
     }
   });
 
@@ -308,15 +318,19 @@ export async function transcribeAction(
   try {
     const vertexModel = classificationModelConfig.vertexModel;
 
+    // Use global for Gemini 3, regional for 2.x
+    const modelLocation = vertexModel.includes('gemini-3') ? 'global' : 'asia-south1';
+    const vertex_ai = getVertexAIInstance(modelLocation);
+
     const model = vertex_ai.getGenerativeModel({
       model: vertexModel,
       systemInstruction: GEMINI_PROMPT,
       generationConfig: {
         responseMimeType: "application/json",
-        ...(vertexModel.includes('gemini-3') && {
-          thinking_config: {
-            include_thoughts: true,
-            thinking_level: 'MINIMAL'
+        ...(vertexModel.startsWith('gemini-3') && {
+          thinkingConfig: {
+            includeThoughts: false,
+            thinkingLevel: vertexModel === 'gemini-3-flash-preview' ? 'MINIMAL' : 'LOW'
           }
         })
       }
