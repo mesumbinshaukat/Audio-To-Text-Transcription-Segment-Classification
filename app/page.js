@@ -146,6 +146,10 @@ export default function Page() {
   };
 
   useEffect(() => {
+    fetchBlobs();
+  }, []);
+
+  useEffect(() => {
     if (view === 'library') {
       fetchBlobs();
     }
@@ -198,7 +202,7 @@ export default function Page() {
           if (res.fallback) {
             addToast(res.message, 'info');
             setLoadingMessage(`Processing inline${fileProgress}...`);
-            const inlineRes = await transcribeAction(blob.url, true, transcriptionModel, classificationModel);
+            const inlineRes = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
             if (inlineRes.error) addToast(inlineRes.error, 'error');
             else {
               setResult({ ...inlineRes, audioUrl: blob.url }); 
@@ -209,7 +213,7 @@ export default function Page() {
           }
         } else {
           setLoadingMessage('Processing...');
-          const res = await transcribeAction(blob.url, true, transcriptionModel, classificationModel);
+          const res = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
           if (res.error) {
             addToast(res.error, 'error');
           } else {

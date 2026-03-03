@@ -261,7 +261,7 @@ async function transcribeWithReplicate(audioUrl, replicateModel) {
  */
 export async function transcribeAction(
   audioUrl,
-  shouldCleanup = true,
+  shouldCleanup = false,
   transcriptionModelId = 'deepinfra-whisper',
   classificationModelId = 'gemini-3-flash'
 ) {
@@ -393,6 +393,7 @@ export async function transcribeAction(
         geminiTime,
         transcriptionModel: transcriptionModelConfig.label,
         classificationModel: classificationModelConfig.label,
+        audioUrl: audioUrl,
       });
     } catch (saveErr) {
       console.error('[transcribe] Failed to auto-save result:', saveErr);

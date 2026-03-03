@@ -157,18 +157,37 @@ export default function SearchPage() {
   const renderSummaryWithAudio = (text, audioUrl) => {
     if (!text) return null;
 
-    // Pattern for [PLAY_AUDIO:START:END]
-    const parts = text.split(/(\[PLAY_AUDIO:[\d.:]+:[\d.:]+\])/g);
+    // More robust pattern for [PLAY_AUDIO:START:END]
+    // Handles extra spaces, colons in timestamps, and case-insensitivity
+    const parts = text.split(/(\[PLAY_AUDIO:[^\]]+\])/gi);
 
     return parts.map((part, i) => {
-      const match = part.match(/\[PLAY_AUDIO:([\d.]+):([\d.]+)\]/);
-      if (match && audioUrl) {
+      const match = part.match(/\[PLAY_AUDIO:\s*([\d.:]+)\s*:\s*([\d.:]+)\s*\]/i);
+      
+      if (match) {
+        if (!audioUrl) {
+          return (
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#94a3b8', fontSize: '0.75rem', border: '1px dashed #cbd5e1', padding: '2px 8px', borderRadius: '12px', margin: '0 4px' }}>
+              <AlertCircle size={10} /> Audio missing
+            </span>
+          );
+        }
+        
+        // Helper to convert time string (HH:MM:SS or just seconds) to strictly seconds
+        const toSeconds = (val) => {
+          if (!val.includes(':')) return parseFloat(val);
+          const parts = val.split(':').map(parseFloat);
+          if (parts.length === 2) return parts[0] * 60 + parts[1];
+          if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+          return parseFloat(val);
+        };
+
         return (
           <TruncatedAudioPlayer 
             key={i} 
             url={audioUrl} 
-            start={parseFloat(match[1])} 
-            end={parseFloat(match[2])} 
+            start={toSeconds(match[1])} 
+            end={toSeconds(match[2])} 
           />
         );
       }
@@ -283,71 +302,31 @@ export default function SearchPage() {
               <p style={{ fontSize: '0.85rem', color: '#cbd5e1', marginTop: '0.5rem' }}>AI-powered summaries and audio snippets will appear here.</p>
             </div>
           ) : (
-            <div style={{ background: 'white', borderRadius: '16px', border: `1px solid ${COLORS.border}`, padding: '2rem', boxShadow: '0 10px 40px rgba(0,0,0,0.03)', animation: 'fadeIn 0.3s ease-out' }}>
-              <header style={{ marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                  <div>
-                    <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: 0, letterSpacing: '-0.025em' }}>
-                      {selectedIssue.Segments?.[0]?.SegmentClassification?.[0]?.EventType || 'Issue Details'}
-                    </h2>
-                    <p style={{ fontSize: '0.9rem', color: COLORS.textMuted, marginTop: '0.25rem' }}>
-                      Recording from {new Date(selectedIssue.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#166534', background: '#dcfce7', padding: '4px 12px', borderRadius: '20px' }}>
-                      CONFIDENCE: {Math.round((selectedIssue.Segments?.[0]?.SegmentClassification?.[0]?.classifyConfidenceScore || 0) * 100)}%
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                  <div style={{ background: '#f8fafc', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '0.65rem', fontWeight: '700', color: COLORS.textMuted, textTransform: 'uppercase' }}>Sub-Event</div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>{selectedIssue.Segments?.[0]?.SegmentClassification?.[0]?.SubType || 'N/A'}</div>
-                  </div>
-                  <div style={{ background: '#f8fafc', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '0.65rem', fontWeight: '700', color: COLORS.textMuted, textTransform: 'uppercase' }}>Sentiment</div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: '600', color: selectedIssue.Segments?.[0]?.SentimentScore > 0 ? '#10b981' : '#f43f5e' }}>
-                      {selectedIssue.Segments?.[0]?.SentimentScore > 0 ? 'Positive' : 'Negative'} ({selectedIssue.Segments?.[0]?.SentimentScore || 0})
-                    </div>
-                  </div>
-                  <div style={{ background: '#f8fafc', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '0.65rem', fontWeight: '700', color: COLORS.textMuted, textTransform: 'uppercase' }}>Escalation</div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>{selectedIssue.overall_EscalationDetected === 'yes' ? '🚨 Detected' : 'None'}</div>
-                  </div>
-                </div>
+            <div style={{ background: 'white', borderRadius: '16px', border: `1px solid ${COLORS.border}`, padding: '2.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.03)', animation: 'fadeIn 0.3s ease-out' }}>
+              <header style={{ marginBottom: '2.5rem' }}>
+                <h2 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, letterSpacing: '-0.025em' }}>
+                  {selectedIssue.Segments?.[0]?.SegmentClassification?.[0]?.EventType || 'Issue Details'}
+                </h2>
+                <p style={{ fontSize: '0.9rem', color: COLORS.textMuted, marginTop: '0.5rem' }}>
+                  Recording from {new Date(selectedIssue.timestamp).toLocaleString()}
+                </p>
               </header>
 
-              <div style={{ background: COLORS.accent, borderRadius: '12px', padding: '1.5rem', marginBottom: '2rem', border: `1px solid #dbeafe`, position: 'relative' }}>
-                <h4 style={{ fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: COLORS.primary, marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ background: COLORS.accent, borderRadius: '16px', padding: '2rem', border: `1px solid #dbeafe`, position: 'relative' }}>
+                <h4 style={{ fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', color: COLORS.primary, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                   <Cpu size={14} /> AI Intelligence Summary
                 </h4>
                 
                 {summarizing ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem 0' }}>
                     <Loader2 size={24} className="animate-spin" style={{ color: COLORS.primary }} />
-                    <span style={{ fontSize: '0.9rem', color: COLORS.textMuted }}>Drafting intelligent brief...</span>
+                    <span style={{ fontSize: '0.95rem', color: COLORS.textMuted }}>Drafting intelligent brief...</span>
                   </div>
                 ) : (
-                  <div style={{ fontSize: '1.05rem', lineHeight: '1.6', color: '#1e3a8a', fontWeight: '500' }}>
+                  <div style={{ fontSize: '1.25rem', lineHeight: '1.7', color: '#1e3a8a', fontWeight: '500' }}>
                     {renderSummaryWithAudio(summary, selectedIssue.audioUrl)}
                   </div>
                 )}
-              </div>
-
-              <div>
-                <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: COLORS.text, marginBottom: '1rem' }}>Original Context</h4>
-                <div style={{ maxHeight: '300px', overflowY: 'auto', background: '#f8fafc', borderRadius: '12px', padding: '1rem', border: '1px solid #e2e8f0', fontSize: '0.9rem', lineHeight: '1.5', color: COLORS.textMuted }}>
-                  {selectedIssue.Segments?.map((seg, i) => (
-                    <div key={i} style={{ marginBottom: '1rem', display: 'flex', gap: '1rem' }}>
-                      <span style={{ color: COLORS.primary, fontWeight: '700', fontSize: '0.75rem', minWidth: '80px' }}>
-                        {seg.Starting_Second.toFixed(1)}s - {seg.Ending_Second.toFixed(1)}s
-                      </span>
-                      <span>{seg.Segment_original}</span>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           )}

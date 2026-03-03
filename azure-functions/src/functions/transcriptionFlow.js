@@ -261,7 +261,8 @@ async function processJob(job) {
             transcriptionModel: transcriptionModelConfig.label,
             classificationModel: classificationModelConfig.label,
             totalTime: (parseFloat(whisperTime) + parseFloat(geminiTime)).toFixed(2),
-            ...geminiResult
+            ...geminiResult,
+            audioUrl: audioUrl || null
         };
 
         history.push(newEntry);
