@@ -13,7 +13,7 @@ This document provides a deep dive into the technical architecture, optimization
    - [Classification Engine (Vertex AI)](#classification-engine-vertex-ai)
 4. [Vertex AI Optimization Deep Dive](#vertex-ai-optimization-deep-dive)
    - [Global Location & Explicit Endpoint](#global-location--explicit-endpoint)
-   - [Context Caching Lifecycle](#context-caching-lifecycle)
+   - [Implicit Caching](#implicit-caching)
    - [Gemini 3 "Thinking" Configuration](#gemini-3-thinking-configuration)
 5. [Replicate Model Integration](#replicate-model-integration)
    - [Insanely Fast Whisper variants](#insanely-fast-whisper-variants)
@@ -62,7 +62,7 @@ The `transcribeAction` in `app/actions.js` acts as the orchestrator. It branches
 - **Replicate**: Passes the direct Blob URL to Replicate's API, which handles the file fetch and processing asynchronously.
 
 ### Classification Engine (Vertex AI)
-Once transcription is complete, the timestamped segments are passed to Gemini. The system instructions (`GEMINI_PROMPT`) are handled via **Context Caching** (see below) to minimize overhead.
+Once transcription is complete, the timestamped segments are passed to Gemini. The system instructions (`GEMINI_PROMPT`) are passed during model initialization. The app leverages **Implicit Caching** (see below) to ensure high performance for repeated prompts without manual cache management.
 
 ---
 
@@ -82,12 +82,13 @@ const vertex_ai = new VertexAI({
 });
 ```
 
-### Context Caching Lifecycle
-The `GEMINI_PROMPT` is large (~100 lines). Uploading it on every request is slow and expensive.
-- **Helper:** `getOrCreateCachedContent(vertexModelId)`
-- **Check:** It first checks an in-memory `modelCaches` object, then queries Vertex AI for existing caches by `displayName`.
-- **Creation:** If missing, it creates a new cache with a **3-hour TTL** (`10800s`).
-- **Reuse:** The `vertex_ai.preview.getGenerativeModel` method is used to instantiate models using the `cachedContent` resource name.
+### Implicit Caching
+Rather than manually managing `CachedContent` resources (which is unsupported in the JS SDK's `global` endpoint), the application uses the standard `systemInstruction` field. 
+
+**How it works:**
+- All Google Cloud projects have **Implicit Caching** enabled by default.
+- When the same system instructions are used across multiple requests, Vertex AI automatically recognizes the pattern.
+- This results in a **90% cost reduction** on redundant tokens and significantly faster "Time to First Token" without the complexity of manual TTL settings or resource listing.
 
 ### Gemini 3 "Thinking" Configuration
 Gemini 3 models introduced a "Thinking" feature. If configured incorrectly at the top level, it returns a `400 Bad Request`. It **must** be nested inside `thinking_config` within `generationConfig`:

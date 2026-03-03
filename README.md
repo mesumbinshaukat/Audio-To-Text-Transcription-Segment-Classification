@@ -6,7 +6,7 @@ Transcribes audio and video using **Whisper** (via DeepInfra or Replicate) and c
 
 - **Multi-Model Selection**: Choose between DeepInfra (Whisper) or Replicate (Insanely Fast Whisper) for transcription.
 - **Gemini 3 Support**: Integrated with Gemini 3 Flash and 3.1 Pro via Vertex AI.
-- **Context Caching**: 30-50% faster classification and 90% lower prompt costs by globally caching system instructions.
+- **Implicit Caching**: 30-50% faster classification and 90% lower prompt costs by leveraging Vertex AI's automatic caching of repeated system instructions.
 - **50MB Uploads**: Bypasses the 4.5MB Vercel limit by uploading directly to Vercel Blob from the browser.
 - **Video Support**: Transcribe and classify `.mp4` and `.webm` files alongside traditional audio.
 - **Blob Library**: Browse and process files already stored in your Vercel cloud storage.
