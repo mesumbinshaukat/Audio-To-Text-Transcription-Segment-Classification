@@ -110,13 +110,16 @@ export default function SearchPage() {
     // 1. A valid classification (Category & Event & Sub-event)
     // 2. A valid audioUrl (so they can be played)
     const categorizedData = data.filter(item => {
-      const audioLink = item.audioUrl || item.audio_url || item.url;
-      return audioLink && 
-      item.Segments?.some(s => 
-        s.SegmentClassification?.some(c => 
-          c.Category && c.EventType && c.SubType
-        )
+      // Check for any possible audio URL property
+      const audioLink = item.audioUrl || item.audio_url || item.url || item.Audio_URL;
+      
+      // Show if it has ANY classification OR at least an overall summary
+      const hasClassification = item.Segments?.some(s => 
+        s.SegmentClassification?.some(c => c.Category || c.EventType || c.SubType || c.Event)
       );
+      const hasSummary = !!(item.overall_AudioSummary || item.Audio_English_Translation || item.Audio_Original_Transcript);
+
+      return audioLink && (hasClassification || hasSummary);
     });
 
     if (!searchQuery.trim()) return categorizedData.slice(0, 20); 
@@ -285,7 +288,7 @@ export default function SearchPage() {
                       </span>
                     </div>
                     <div style={{ fontSize: '0.9rem', fontWeight: '700', color: COLORS.text, marginBottom: '0.25rem' }}>
-                      {item.Segments?.[0]?.SegmentClassification?.[0]?.EventType || 'Operational Note'}
+                      {item.Segments?.[0]?.SegmentClassification?.[0]?.EventType || item.Segments?.[0]?.SegmentClassification?.[0]?.Event || item.overall_TopKeywords?.[0] || 'Operational Note'}
                     </div>
                     <p style={{ fontSize: '0.8rem', color: COLORS.textMuted, margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {item.overall_AudioSummary || item.Audio_Original_Transcript}
@@ -309,7 +312,7 @@ export default function SearchPage() {
             <div style={{ background: 'white', borderRadius: '16px', border: `1px solid ${COLORS.border}`, padding: '2.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.03)', animation: 'fadeIn 0.3s ease-out' }}>
               <header style={{ marginBottom: '2.5rem' }}>
                 <h2 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, letterSpacing: '-0.025em' }}>
-                  {selectedIssue.Segments?.[0]?.SegmentClassification?.[0]?.EventType || 'Issue Details'}
+                  {selectedIssue.Segments?.[0]?.SegmentClassification?.[0]?.EventType || selectedIssue.Segments?.[0]?.SegmentClassification?.[0]?.Event || 'Issue Details'}
                 </h2>
                 <p style={{ fontSize: '0.9rem', color: COLORS.textMuted, marginTop: '0.5rem' }}>
                   Recording from {new Date(selectedIssue.timestamp).toLocaleString()}

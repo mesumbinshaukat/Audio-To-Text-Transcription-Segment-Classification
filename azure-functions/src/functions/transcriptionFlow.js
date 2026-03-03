@@ -262,7 +262,11 @@ async function processJob(job) {
             classificationModel: classificationModelConfig.label,
             totalTime: (parseFloat(whisperTime) + parseFloat(geminiTime)).toFixed(2),
             ...geminiResult,
-            audioUrl: audioUrl || null
+            Audio_URL: audioUrl || null,
+            audioUrl: audioUrl || null,
+            Segments: Array.isArray(geminiResult.Segments) 
+                ? geminiResult.Segments.map(s => ({ ...s, audioUrl: audioUrl || null })) 
+                : []
         };
 
         history.push(newEntry);

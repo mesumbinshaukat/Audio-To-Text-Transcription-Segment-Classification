@@ -105,6 +105,7 @@ JSON Structure:
   "overall_CriticalEventPresent": "yes/no",
   "overall_EscalationDetected": "yes/no",
   "overall_DetectedNamedEntity": ["Category names, people, locations only"],
+  "Audio_URL": "string",
   "Segments": [
     {
       "SegmentID": "id",
@@ -132,12 +133,13 @@ JSON Structure:
       "DetectedIntent": ["string"],
       "EnvironmentNoiseLevel": "low/medium/high",
       "SentimentScore": -1.0 to 1.0,
-      "EmotionalTone": "string"
+      "EmotionalTone": "string",
+      "audioUrl": "string"
     }
   ]
 }
 
-Transcription:
+Transcription (Audio URL: {{AUDIO_URL}}):
 `;
 
 /**
@@ -370,6 +372,25 @@ export async function transcribeAction(
   } catch (err) {
     console.error('Gemini error:', err);
     geminiError = err.message || 'Gemini classification failed';
+  }
+
+  // Normalize Gemini Response: Handle array wrap or missing segments
+  if (geminiResult) {
+    if (Array.isArray(geminiResult)) {
+      geminiResult = geminiResult[0];
+    }
+    
+    // Inject audioUrl into geminiResult if successful
+    geminiResult.Audio_URL = audioUrl;
+    geminiResult.audioUrl = audioUrl;
+
+    // Normalize segment keys if they are lowercase or missing
+    const rawSegments = geminiResult.Segments || geminiResult.segments || [];
+    if (Array.isArray(rawSegments)) {
+      geminiResult.Segments = rawSegments.map(s => ({ ...s, audioUrl }));
+    } else {
+      geminiResult.Segments = [];
+    }
   }
 
   const geminiTime = ((Date.now() - geminiStart) / 1000).toFixed(2);
