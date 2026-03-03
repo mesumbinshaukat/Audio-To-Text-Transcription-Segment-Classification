@@ -573,10 +573,12 @@ export async function summarizeIssueAction(issueData) {
 
     const model = vertex_ai.getGenerativeModel({
       model: vertexModel,
-      systemInstruction: `You are a helpful store operations assistant. Summarize the following store issue into a concise, professional, and readable narrative (max 3 sentences). 
-      IMPORTANT: You MUST identify the most relevant customer/employee quote from the data and place a special marker "[PLAY_AUDIO:START_TIME:END_TIME]" exactly where the audio snippet should be played.
+      systemInstruction: `You are a helpful store operations assistant. Summarize the following specific STORE SEGMENT into a concise, professional, and readable narrative (max 2 sentences). 
       
-      Example: "The customer reported a broken handle on the toilet door [PLAY_AUDIO:45.2:50.1]. This needs immediate attention to avoid further complaints."
+      Focus ONLY on what happened during this specific segment. 
+      IMPORTANT: You MUST identify the most relevant part of the segment text and place a special marker "[PLAY_AUDIO:START_TIME:END_TIME]" exactly where it fits in the summary.
+      
+      Example: "The customer reported a pricing error on a tobacco product [PLAY_AUDIO:45.2:50.1]."
       
       Output ONLY the summarized text with the marker.`,
     });

@@ -41,7 +41,9 @@ async function testTranscriptionSchema() {
     const url = entry.audioUrl || entry.Audio_URL || entry.url || entry.audio_url;
     const hasSegments = Array.isArray(entry.Segments);
     console.log(`Entry ${i}: URL=${!!url}, Segments=${hasSegments}, ID=${entry.id || 'N/A'}`);
-    if (url && !hasSegments) {
+    if (entry['0']) {
+        console.log(`  -> Key "0" found! Content sample: ${JSON.stringify(entry['0']).substring(0, 200)}...`);
+    } else if (url && !hasSegments) {
         console.log(`  -> URL present but NO SEGMENTS array. Keys: ${Object.keys(entry).join(', ')}`);
     }
   });

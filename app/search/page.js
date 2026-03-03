@@ -104,47 +104,53 @@ export default function SearchPage() {
     fetchData();
   }, []);
 
-  // Real-time asynchronous search logic
+  // Real-time asynchronous search logic: Flatten data into individual classified segments
   const filteredIssues = useMemo(() => {
-    // Filter to only show issues that have:
-    // 1. A valid classification (Category & Event & Sub-event)
-    // 2. A valid audioUrl (so they can be played)
-    const categorizedData = data.filter(item => {
-      // Check for any possible audio URL property
-      const audioLink = item.audioUrl || item.audio_url || item.url || item.Audio_URL;
-      
-      // Show if it has ANY classification OR at least an overall summary
-      const hasClassification = item.Segments?.some(s => 
-        s.SegmentClassification?.some(c => c.Category || c.EventType || c.SubType || c.Event)
-      );
-      const hasSummary = !!(item.overall_AudioSummary || item.Audio_English_Translation || item.Audio_Original_Transcript);
+    // 1. Flatten into segments
+    const flattened = [];
+    data.forEach(entry => {
+      const entryAudioUrl = entry.audioUrl || entry.audio_url || entry.url || entry.Audio_URL;
+      if (!entryAudioUrl || !Array.isArray(entry.Segments)) return;
 
-      return audioLink && (hasClassification || hasSummary);
+      entry.Segments.forEach((segment, sIndex) => {
+        // Only include segments that have some classification OR are meaningful
+        const isClassified = segment.SegmentClassification?.some(c => c.Category || c.EventType || c.Event || c.SubType);
+        if (isClassified) {
+          flattened.push({
+            ...segment,
+            parentEntryId: entry.id,
+            timestamp: entry.timestamp,
+            audioUrl: entryAudioUrl,
+            // Create a unique composite ID for the segment
+            compositeId: `${entry.id}-seg-${sIndex}`
+          });
+        }
+      });
     });
 
-    if (!searchQuery.trim()) return categorizedData.slice(0, 20); 
+    if (!searchQuery.trim()) return flattened.slice(0, 40); 
     
     const query = searchQuery.toLowerCase();
-    return categorizedData.filter(item => {
-      const text = (item.Audio_Original_Transcript || '').toLowerCase();
-      const summaryText = (item.overall_AudioSummary || '').toLowerCase();
-      const categoryMatch = item.Segments?.some(s => 
-        s.SegmentClassification?.some(c => 
-          c.Category?.toLowerCase().includes(query) || 
-          c.EventType?.toLowerCase().includes(query) || 
-          c.SubType?.toLowerCase().includes(query)
-        )
+    return flattened.filter(seg => {
+      const text = (seg.Segment_original || '').toLowerCase();
+      const summaryText = (seg.Segment_Summary || '').toLowerCase();
+      const classificationMatch = seg.SegmentClassification?.some(c => 
+        c.Category?.toLowerCase().includes(query) || 
+        c.EventType?.toLowerCase().includes(query) || 
+        c.Event?.toLowerCase().includes(query) || 
+        c.SubType?.toLowerCase().includes(query)
       );
       
-      return text.includes(query) || summaryText.includes(query) || categoryMatch;
+      return text.includes(query) || summaryText.includes(query) || classificationMatch;
     });
   }, [data, searchQuery]);
 
   const handleSelectIssue = async (issue) => {
     setSelectedIssue(issue);
+    const issueKey = issue.compositeId;
     
-    if (summaryCache.current[issue.id]) {
-      setSummary(summaryCache.current[issue.id]);
+    if (summaryCache.current[issueKey]) {
+      setSummary(summaryCache.current[issueKey]);
       return;
     }
 
@@ -154,7 +160,7 @@ export default function SearchPage() {
     const res = await summarizeIssueAction(issue);
     if (res.summary) {
       setSummary(res.summary);
-      summaryCache.current[issue.id] = res.summary;
+      summaryCache.current[issueKey] = res.summary;
     } else {
       setSummary("Failed to generate summary. Please try again.");
     }
@@ -266,32 +272,32 @@ export default function SearchPage() {
                   <p style={{ fontSize: '0.9rem', color: COLORS.textMuted }}>No matching issues found.</p>
                 </div>
               ) : (
-                filteredIssues.map((item) => (
+                 filteredIssues.map((item) => (
                   <div 
-                    key={item.id} 
+                    key={item.compositeId} 
                     onClick={() => handleSelectIssue(item)}
                     style={{
                       padding: '1.25rem',
                       borderBottom: `1px solid ${COLORS.border}`,
                       cursor: 'pointer',
-                      background: selectedIssue?.id === item.id ? COLORS.accent : 'transparent',
+                      background: selectedIssue?.compositeId === item.compositeId ? COLORS.accent : 'transparent',
                       transition: 'all 0.2s',
-                      borderLeft: `4px solid ${selectedIssue?.id === item.id ? COLORS.primary : 'transparent'}`
+                      borderLeft: `4px solid ${selectedIssue?.compositeId === item.compositeId ? COLORS.primary : 'transparent'}`
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                       <span style={{ fontSize: '0.75rem', fontWeight: '700', color: COLORS.primary, background: '#eef2ff', padding: '2px 8px', borderRadius: '4px' }}>
-                        {item.Segments?.[0]?.SegmentClassification?.[0]?.Category || 'General'}
+                        {item.SegmentClassification?.[0]?.Category || 'General'}
                       </span>
                       <span style={{ fontSize: '0.7rem', color: COLORS.textMuted }}>
                         {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     <div style={{ fontSize: '0.9rem', fontWeight: '700', color: COLORS.text, marginBottom: '0.25rem' }}>
-                      {item.Segments?.[0]?.SegmentClassification?.[0]?.EventType || item.Segments?.[0]?.SegmentClassification?.[0]?.Event || item.overall_TopKeywords?.[0] || 'Operational Note'}
+                      {item.SegmentClassification?.[0]?.EventType || item.SegmentClassification?.[0]?.Event || 'Operational Note'}
                     </div>
                     <p style={{ fontSize: '0.8rem', color: COLORS.textMuted, margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {item.overall_AudioSummary || item.Audio_Original_Transcript}
+                      {item.Segment_Summary || item.Segment_original}
                     </p>
                   </div>
                 ))
@@ -311,8 +317,8 @@ export default function SearchPage() {
           ) : (
             <div style={{ background: 'white', borderRadius: '16px', border: `1px solid ${COLORS.border}`, padding: '2.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.03)', animation: 'fadeIn 0.3s ease-out' }}>
               <header style={{ marginBottom: '2.5rem' }}>
-                <h2 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, letterSpacing: '-0.025em' }}>
-                  {selectedIssue.Segments?.[0]?.SegmentClassification?.[0]?.EventType || selectedIssue.Segments?.[0]?.SegmentClassification?.[0]?.Event || 'Issue Details'}
+                 <h2 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, letterSpacing: '-0.025em' }}>
+                  {selectedIssue.SegmentClassification?.[0]?.EventType || selectedIssue.SegmentClassification?.[0]?.Event || 'Issue Details'}
                 </h2>
                 <p style={{ fontSize: '0.9rem', color: COLORS.textMuted, marginTop: '0.5rem' }}>
                   Recording from {new Date(selectedIssue.timestamp).toLocaleString()}
