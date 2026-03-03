@@ -383,6 +383,7 @@ export async function transcribeAction(
     geminiError,
     transcriptionModel: transcriptionModelConfig.label,
     classificationModel: classificationModelConfig.label,
+    audioUrl,
   };
 
   // --- Step 3: Auto-Save to History ---

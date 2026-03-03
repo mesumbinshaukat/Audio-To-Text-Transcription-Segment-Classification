@@ -223,7 +223,7 @@ export default function Page() {
             const inlineRes = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
             if (inlineRes.error) addToast(inlineRes.error, 'error');
             else {
-              setResult({ ...inlineRes, audioUrl: blob.url }); 
+              setResult({ ...inlineRes, audioUrl: inlineRes.audioUrl || blob.url }); 
               addToast(`Processed ${audioFile.name} inline`, 'success');
             }
           } else if (res.error) {
@@ -235,7 +235,7 @@ export default function Page() {
           if (res.error) {
             addToast(res.error, 'error');
           } else {
-            setResult({ ...res, audioUrl: blob.url });
+            setResult({ ...res, audioUrl: res.audioUrl || blob.url });
             addToast('Processing complete!', 'success');
           }
         }
@@ -270,7 +270,7 @@ export default function Page() {
         const inlineRes = await transcribeAction(blobUrl, false, transcriptionModel, classificationModel);
         if (inlineRes.error) addToast(inlineRes.error, 'error');
         else {
-          setResult(inlineRes);
+          setResult({ ...inlineRes, audioUrl: inlineRes.audioUrl || blobUrl });
           addToast('File processed inline successfully', 'success');
         }
       } else if (res.error) {

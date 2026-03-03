@@ -109,14 +109,15 @@ export default function SearchPage() {
     // Filter to only show issues that have:
     // 1. A valid classification (Category & Event & Sub-event)
     // 2. A valid audioUrl (so they can be played)
-    const categorizedData = data.filter(item => 
-      item.audioUrl && 
+    const categorizedData = data.filter(item => {
+      const audioLink = item.audioUrl || item.audio_url || item.url;
+      return audioLink && 
       item.Segments?.some(s => 
         s.SegmentClassification?.some(c => 
           c.Category && c.EventType && c.SubType
         )
-      )
-    );
+      );
+    });
 
     if (!searchQuery.trim()) return categorizedData.slice(0, 20); 
     
@@ -327,7 +328,7 @@ export default function SearchPage() {
                   </div>
                 ) : (
                   <div style={{ fontSize: '1.25rem', lineHeight: '1.7', color: '#1e3a8a', fontWeight: '500' }}>
-                    {renderSummaryWithAudio(summary, selectedIssue.audioUrl)}
+                    {renderSummaryWithAudio(summary, selectedIssue.audioUrl || selectedIssue.audio_url || selectedIssue.url)}
                   </div>
                 )}
               </div>
