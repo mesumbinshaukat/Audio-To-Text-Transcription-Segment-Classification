@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { getAnalyticsAction, summarizeIssueAction } from '../actions';
-import { Search, Play, Pause, ArrowLeft, Clock, MessageSquare, AlertCircle, ChevronRight, Loader2 } from 'lucide-react';
+import { Search, Play, Pause, ArrowLeft, Clock, MessageSquare, AlertCircle, ChevronRight, Loader2, Cpu } from 'lucide-react';
 
 // Theme Colors (Matches Dashboard)
 const COLORS = {
@@ -106,10 +106,19 @@ export default function SearchPage() {
 
   // Real-time asynchronous search logic
   const filteredIssues = useMemo(() => {
-    if (!searchQuery.trim()) return data.slice(0, 20); // Show recent 20 if no search
+    // Filter to only show issues that have a valid classification (Category & Event & Sub-event)
+    const categorizedData = data.filter(item => 
+      item.Segments?.some(s => 
+        s.SegmentClassification?.some(c => 
+          c.Category && c.EventType && c.SubType
+        )
+      )
+    );
+
+    if (!searchQuery.trim()) return categorizedData.slice(0, 20); 
     
     const query = searchQuery.toLowerCase();
-    return data.filter(item => {
+    return categorizedData.filter(item => {
       const text = (item.Audio_Original_Transcript || '').toLowerCase();
       const summaryText = (item.overall_AudioSummary || '').toLowerCase();
       const categoryMatch = item.Segments?.some(s => 
