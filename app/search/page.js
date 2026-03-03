@@ -106,8 +106,11 @@ export default function SearchPage() {
 
   // Real-time asynchronous search logic
   const filteredIssues = useMemo(() => {
-    // Filter to only show issues that have a valid classification (Category & Event & Sub-event)
+    // Filter to only show issues that have:
+    // 1. A valid classification (Category & Event & Sub-event)
+    // 2. A valid audioUrl (so they can be played)
     const categorizedData = data.filter(item => 
+      item.audioUrl && 
       item.Segments?.some(s => 
         s.SegmentClassification?.some(c => 
           c.Category && c.EventType && c.SubType

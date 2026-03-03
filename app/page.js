@@ -123,6 +123,7 @@ export default function Page() {
   const [toasts, setToasts] = useState([]);
 
   // Model Selection State
+  const [selectedFileName, setSelectedFileName] = useState('');
   const [transcriptionModel, setTranscriptionModel] = useState('deepinfra-whisper');
   const [classificationModel, setClassificationModel] = useState('gemini-3-flash');
 
@@ -155,6 +156,11 @@ export default function Page() {
     }
   }, [view]);
 
+  useEffect(() => {
+    if (result && !loading) {
+      setSelectedFileName('');
+    }
+  }, [result, loading]);
   const handleFormSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
@@ -182,17 +188,29 @@ export default function Page() {
         let blob;
 
         if (existingBlob) {
+          console.log('[upload] Found existing blob:', existingBlob.url);
           addToast(`Referencing existing: ${audioFile.name}`, 'info');
           blob = existingBlob;
         } else {
-          setLoadingMessage(`Uploading${fileProgress}...`);
-          const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
-          blob = await upload(fileName, audioFile, {
-            access: 'public',
-            handleUploadUrl: '/api/upload',
-          });
-          // Refresh blob list in background
-          fetchBlobs();
+          try {
+            setLoadingMessage(`Uploading${fileProgress}...`);
+            const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
+            console.log('[upload] Starting Vercel Blob upload for:', fileName, 'Size:', audioFile.size);
+            
+            blob = await upload(fileName, audioFile, {
+              access: 'public',
+              handleUploadUrl: '/api/upload',
+            });
+            
+            console.log('[upload] Success! Blob URL:', blob.url);
+            addToast(`Uploaded: ${audioFile.name}`, 'success');
+            // Refresh blob list in background
+            fetchBlobs();
+          } catch (uploadErr) {
+            console.error('[upload] Vercel Blob Error:', uploadErr);
+            addToast(`Upload failed: ${uploadErr.message}`, 'error');
+            throw uploadErr; // Exit early if upload fails
+          }
         }
 
         if (isMultiple) {
@@ -363,14 +381,28 @@ export default function Page() {
         {/* Views */}
         {view === 'upload' ? (
           <form onSubmit={handleFormSubmit}>
-            <div style={{
-              border: '2px dashed #e2e8f0', borderRadius: '12px', padding: '3rem 2rem', textAlign: 'center',
-              marginBottom: '1.5rem', background: '#fcfcfd', transition: 'border-color 0.2s',
-              cursor: 'pointer'
-            }} onClick={() => document.getElementById('audio-input').click()}>
-              <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>📁</div>
-              <div style={{ fontSize: '1rem', fontWeight: '600', color: '#334155', marginBottom: '0.25rem' }}>Click to browse or drag and drop</div>
-              <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Support for Multiple MP3, WAV, MP4, WebM</div>
+            <div 
+              style={{
+                border: loading ? '2px dashed #f1f5f9' : `2px dashed ${selectedFileName ? '#2563eb' : '#e2e8f0'}`, 
+                borderRadius: '12px', 
+                padding: '3rem 2rem', 
+                textAlign: 'center',
+                marginBottom: '1.5rem', 
+                background: selectedFileName ? '#eff6ff' : '#fcfcfd', 
+                transition: 'all 0.2s',
+                cursor: loading ? 'not-allowed' : 'pointer'
+              }} 
+              onClick={() => !loading && document.getElementById('audio-input').click()}
+            >
+              <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
+                {selectedFileName ? '📄' : '📁'}
+              </div>
+              <div style={{ fontSize: '1rem', fontWeight: '600', color: '#334155', marginBottom: '0.25rem' }}>
+                {selectedFileName || 'Click to browse or drag and drop'}
+              </div>
+              <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                {selectedFileName ? 'Click to change selection' : 'Support for Multiple MP3, WAV, MP4, WebM'}
+              </div>
               <input
                 type="file"
                 id="audio-input"
@@ -379,6 +411,16 @@ export default function Page() {
                 required
                 multiple
                 style={{ display: 'none' }}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files);
+                  if (files.length > 0) {
+                    const name = files.length === 1 ? files[0].name : `${files.length} files selected`;
+                    setSelectedFileName(name);
+                    console.log('[ui] Selected:', files.map(f => f.name));
+                  } else {
+                    setSelectedFileName('');
+                  }
+                }}
               />
             </div>
             <button
