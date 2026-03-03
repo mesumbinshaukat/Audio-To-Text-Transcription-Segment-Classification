@@ -174,13 +174,22 @@ export default function Page() {
     try {
       for (const [index, audioFile] of audioFiles.entries()) {
         const fileProgress = isMultiple ? ` [${index + 1}/${audioFiles.length}]` : '';
-        setLoadingMessage(`Uploading${fileProgress}...`);
+        const existingBlob = blobList.find(b => b.pathname.endsWith(audioFile.name.replace(/\s+/g, '-')));
+        let blob;
 
-        const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
-        const blob = await upload(fileName, audioFile, {
-          access: 'public',
-          handleUploadUrl: '/api/upload',
-        });
+        if (existingBlob) {
+          addToast(`Referencing existing: ${audioFile.name}`, 'info');
+          blob = existingBlob;
+        } else {
+          setLoadingMessage(`Uploading${fileProgress}...`);
+          const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
+          blob = await upload(fileName, audioFile, {
+            access: 'public',
+            handleUploadUrl: '/api/upload',
+          });
+          // Refresh blob list in background
+          fetchBlobs();
+        }
 
         if (isMultiple) {
           setLoadingMessage(`Queuing${fileProgress}...`);
@@ -192,7 +201,7 @@ export default function Page() {
             const inlineRes = await transcribeAction(blob.url, true, transcriptionModel, classificationModel);
             if (inlineRes.error) addToast(inlineRes.error, 'error');
             else {
-              setResult(inlineRes); 
+              setResult({ ...inlineRes, audioUrl: blob.url }); 
               addToast(`Processed ${audioFile.name} inline`, 'success');
             }
           } else if (res.error) {
@@ -204,7 +213,7 @@ export default function Page() {
           if (res.error) {
             addToast(res.error, 'error');
           } else {
-            setResult(res);
+            setResult({ ...res, audioUrl: blob.url });
             addToast('Processing complete!', 'success');
           }
         }
@@ -279,7 +288,10 @@ export default function Page() {
             <div style={{ width: '32px', height: '32px', background: 'linear-gradient(135deg, #0070f3 0%, #00a3ff 100%)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>A</div>
             <Link href="/" style={{ textDecoration: 'none', color: '#111', fontWeight: '800', fontSize: '1.2rem', letterSpacing: '-0.02em' }}>AI PRSR</Link>
           </div>
-          <Link href="/dashboard" style={{ textDecoration: 'none', color: '#0070f3', fontSize: '0.85rem', fontWeight: '600', padding: '0.5rem 1rem', borderRadius: '8px', background: '#f0f7ff', transition: 'all 0.2s' }}>Analytics Dashboard →</Link>
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <Link href="/search" style={{ textDecoration: 'none', color: '#111', fontSize: '0.85rem', fontWeight: '600', padding: '0.5rem 1rem', borderRadius: '8px', background: '#f5f5f7', transition: 'all 0.2s' }}>Search Issues</Link>
+            <Link href="/dashboard" style={{ textDecoration: 'none', color: '#0070f3', fontSize: '0.85rem', fontWeight: '600', padding: '0.5rem 1rem', borderRadius: '8px', background: '#f0f7ff', transition: 'all 0.2s' }}>Analytics Dashboard →</Link>
+          </div>
         </header>
 
         <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>

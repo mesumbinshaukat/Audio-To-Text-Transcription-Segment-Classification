@@ -439,7 +439,8 @@ export async function saveClassificationAction(classificationData, timingData = 
       totalTime: timingData.whisperTime && timingData.geminiTime
         ? (parseFloat(timingData.whisperTime) + parseFloat(timingData.geminiTime)).toFixed(2)
         : null,
-      ...classificationData
+      ...classificationData,
+      audioUrl: timingData.audioUrl || null,
     };
 
     history.push(newEntry);
@@ -533,5 +534,38 @@ export async function enqueueTranscriptionAction(audioUrl, transcriptionModelId 
       fallback: true, 
       message: 'Background service connection failed. Processing inline...' 
     };
+  }
+}
+
+/**
+ * summarizeIssueAction:
+ * Uses Gemini Flash 2.5 Lite to create a beautiful summarized story of a specific issue.
+ * It injects placeholders for audio playback dynamically.
+ */
+export async function summarizeIssueAction(issueData) {
+  try {
+    const classificationModelConfig = CLASSIFICATION_MODELS['gemini-3-flash'] || CLASSIFICATION_MODELS['gemini-2.0-flash'];
+    const vertexModel = classificationModelConfig.vertexModel;
+    const vertex_ai = getVertexAIInstance('global');
+
+    const model = vertex_ai.getGenerativeModel({
+      model: vertexModel,
+      systemInstruction: `You are a helpful store operations assistant. Summarize the following store issue into a concise, professional, and readable narrative (max 3 sentences). 
+      IMPORTANT: You MUST identify the most relevant customer/employee quote from the data and place a special marker "[PLAY_AUDIO:START_TIME:END_TIME]" exactly where the audio snippet should be played.
+      
+      Example: "The customer reported a broken handle on the toilet door [PLAY_AUDIO:45.2:50.1]. This needs immediate attention to avoid further complaints."
+      
+      Output ONLY the summarized text with the marker.`,
+    });
+
+    const prompt = JSON.stringify(issueData);
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const summary = response.candidates[0].content.parts[0].text.trim();
+
+    return { summary };
+  } catch (error) {
+    console.error('[summarize] Gemini error:', error);
+    return { error: 'Failed to generate summary' };
   }
 }

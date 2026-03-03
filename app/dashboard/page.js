@@ -176,6 +176,9 @@ export default function DashboardPage() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <Link href="/search" style={{ background: 'transparent', border: `1px solid ${COLORS.border}`, padding: '0.5rem 1.25rem', borderRadius: '8px', color: COLORS.text, textDecoration: 'none', fontWeight: '700', fontSize: '0.85rem', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Eye size={16} /> Search & Issues
+            </Link>
             <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, padding: '0.5rem 1rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <div style={{ width: '8px', height: '8px', background: '#10b981', borderRadius: '50%', animation: 'pulse 2s infinite' }}></div>
               <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Live History Feed</span>
