@@ -2,3 +2,4 @@
 node_modules/
 .next/
 beaudible-aianalysis-dev.json
+ngrok.exe

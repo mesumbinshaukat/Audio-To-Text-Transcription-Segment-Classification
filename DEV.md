@@ -15,9 +15,10 @@ This document provides a deep dive into the technical architecture, optimization
    - [Dynamic Regional Routing](#dynamic-regional-routing)
    - [Implicit Caching](#implicit-caching)
    - [Gemini 3 "Thinking" Configuration](#gemini-3-thinking-configuration)
-5. [Replicate Model Integration](#replicate-model-integration)
-   - [Insanely Fast Whisper variants](#insanely-fast-whisper-variants)
-   - [Output Normalization](#output-normalization)
+6. [Automated Processing & Queuing (Azure Functions)](#automated-processing--queuing-azure-functions)
+   - [Durable Functions Orchestration](#durable-functions-orchestration)
+   - [Processing Queue (Sequential Mode)](#processing-queue-sequential-mode)
+   - [Vercel Blob Webhooks](#vercel-blob-webhooks)
 6. [Data Persistence & Analytics](#data-persistence--analytics)
    - [Vercel Blob JSON Storage](#vercel-blob-json-storage)
    - [Dashboard Implementation](#dashboard-implementation)
@@ -110,6 +111,18 @@ We support two high-performance Whisper implementations on Replicate:
 
 ### Output Normalization
 Since different providers return slightly different JSON structures (e.g., `chunks` vs `segments`, and varied timestamp formats), the `transcribeWithReplicate` helper normalizes everything into a standard `{ text, segments }` object used by the rest of the application.
+
+---
+
+## Automated Processing & Queuing (Azure Functions)
+
+The project includes an Azure Durable Functions sub-project located in `azure-functions/`. This system allows for automated, background processing of media files.
+
+For in-depth technical details on setup, local development (Azurite/Ngrok), and the internal processing flow, see the dedicated documentation:
+
+👉 **[AZURE_DURABLE_FUNCTIONS.md](file:///e:/Projects/ai_transcription/AZURE_DURABLE_FUNCTIONS.md)**
+
+---
 
 ---
 

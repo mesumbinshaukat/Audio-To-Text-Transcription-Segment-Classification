@@ -44,6 +44,7 @@ Transcribes audio and video using **Whisper** (via DeepInfra or Replicate) and c
 1. **Upload New**: Select any audio/video file and choose your preferred Transcription and Classification models.
 2. **Browse Library**: Click the library tab to see existing files in your cloud storage and process them instantly.
 3. **Dashboard**: View timing comparisons between models and access historical classification results.
+4. **Background Processing**: Refer to [AZURE_DURABLE_FUNCTIONS.md](file:///e:/Projects/ai_transcription/AZURE_DURABLE_FUNCTIONS.md) for details on setting up automated, long-running transcription tasks.
 
 ## Deploy to Vercel
 

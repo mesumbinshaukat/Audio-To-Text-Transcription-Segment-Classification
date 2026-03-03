@@ -263,7 +263,7 @@ export async function transcribeAction(
   audioUrl,
   shouldCleanup = true,
   transcriptionModelId = 'deepinfra-whisper',
-  classificationModelId = 'gemini-2.5-flash'
+  classificationModelId = 'gemini-3-flash'
 ) {
   if (!audioUrl) return { error: 'No audio URL provided' };
 
@@ -478,5 +478,60 @@ export async function getAnalyticsAction() {
   } catch (error) {
     console.error('[analytics] Failed to fetch history:', error);
     return [];
+  }
+}
+
+/**
+ * enqueueTranscriptionAction:
+ * Manually triggers the Azure Function (Durable Functions) to process a file 
+ * that is already in storage or just uploaded.
+ */
+export async function enqueueTranscriptionAction(audioUrl, transcriptionModelId = 'deepinfra-whisper', classificationModelId = 'gemini-3-flash') {
+  try {
+    const functionUrl = process.env.AZURE_FUNCTION_URL || 'http://localhost:7071/api/HttpBlobTrigger';
+
+    // If we're on Vercel and NO function URL is set, we must fallback to inline
+    if (process.env.VERCEL && !process.env.AZURE_FUNCTION_URL) {
+      console.log('[enqueue] No Azure Function URL configured on Vercel, suggesting fallback');
+      return { 
+        fallback: true, 
+        message: 'Background processing not configured (AZURE_FUNCTION_URL missing). Switching to inline mode...' 
+      };
+    }
+
+    // Simulate the Vercel Blob Webhook payload
+    const payload = {
+      type: 'blob.created',
+      payload: {
+        url: audioUrl,
+        transcriptionModelId,
+        classificationModelId
+      }
+    };
+
+    const resp = await fetch(functionUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      // Add a short timeout for the trigger
+      signal: AbortSignal.timeout(5000)
+    });
+
+    if (!resp.ok) {
+      console.warn(`[enqueue] Azure Function unreachable (${resp.status}), suggesting fallback`);
+      return { 
+        fallback: true, 
+        message: `Background service unavailable (${resp.status}). Processing inline...` 
+      };
+    }
+
+    return { success: true, message: 'Added to background queue' };
+  } catch (error) {
+    console.error('[enqueue] Failed:', error);
+    // If it's a connection error (ECONNREFUSED or timeout), suggest fallback
+    return { 
+      fallback: true, 
+      message: 'Background service connection failed. Processing inline...' 
+    };
   }
 }
