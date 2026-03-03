@@ -318,8 +318,11 @@ export async function transcribeAction(
   try {
     const vertexModel = classificationModelConfig.vertexModel;
 
-    // Use global for Gemini 3, regional for 2.x
-    const modelLocation = vertexModel.includes('gemini-3') ? 'global' : 'asia-south1';
+    // Gemini 3 models and 2.5 Flash-Lite are only available globally.
+    // Standard Gemini 2.x models can use regional endpoints like asia-south1.
+    const modelLocation = (vertexModel.includes('gemini-3') || vertexModel === 'gemini-2.5-flash-lite')
+      ? 'global'
+      : 'asia-south1';
     const vertex_ai = getVertexAIInstance(modelLocation);
 
     const model = vertex_ai.getGenerativeModel({

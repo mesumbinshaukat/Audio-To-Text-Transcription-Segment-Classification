@@ -71,8 +71,8 @@ Once transcription is complete, the timestamped segments are passed to Gemini. T
 ### Dynamic Regional Routing
 To optimize latency and comply with model availability, the application dynamically selects the Vertex AI region based on the chosen model:
 
-- **Gemini 3 Preview Models**: Routed to `location: 'global'` with `apiEndpoint: 'aiplatform.googleapis.com'`.
-- **Gemini 2.x Models**: Routed to `location: 'asia-south1'` with `apiEndpoint: 'asia-south1-aiplatform.googleapis.com'` for better performance in the local region.
+- **Global Models**: `gemini-3` series and `gemini-2.5-flash-lite` are routed to `location: 'global'` (aiplatform.googleapis.com).
+- **Regional Models**: Standard `gemini-2.5-flash` is routed to `location: 'asia-south1'` (asia-south1-aiplatform.googleapis.com) for low-latency regional processing.
 
 **Implementation:**
 The `getVertexAIInstance(location)` helper in `actions.js` manages these instances and ensures the correct `apiEndpoint` is set for each region.
