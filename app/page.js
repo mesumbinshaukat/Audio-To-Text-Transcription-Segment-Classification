@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { upload } from '@vercel/blob/client';
-import { transcribeAction, listBlobsAction, enqueueTranscriptionAction } from './actions';
+import { transcribeAction, listBlobsAction, enqueueTranscriptionAction, findBlobByNameAction } from './actions';
 import { TRANSCRIPTION_MODELS, CLASSIFICATION_MODELS } from './models';
 import Link from 'next/link';
 
@@ -200,21 +200,35 @@ export default function Page() {
         }
 
         const results = await Promise.all(audioFiles.map(async (file, idx) => {
-          const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
+          const fileName = file.name.replace(/\s+/g, '-');
           
           try {
-            setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'uploading' } : item));
-            const blob = await upload(fileName, file, { access: 'public', handleUploadUrl: '/api/upload' });
+            // Check if exists first
+            setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'checking' } : item));
+            const existingBlob = await findBlobByNameAction(fileName);
+            
+            let blobUrl = '';
+            if (existingBlob) {
+                setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'existing' } : item));
+                blobUrl = existingBlob.url;
+            } else {
+                setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'uploading' } : item));
+                // Use a timestamped name for uniqueness if we MUST upload, but the user wanted to ignore if exists.
+                // However, the find check uses the base name. 
+                const uploadName = `${Date.now()}-${fileName}`;
+                const blob = await upload(uploadName, file, { access: 'public', handleUploadUrl: '/api/upload' });
+                blobUrl = blob.url;
+            }
             
             if (idx < MAX_LOCAL) {
                 setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'processing' } : item));
-                const res = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
+                const res = await transcribeAction(blobUrl, false, transcriptionModel, classificationModel);
                 const resultObj = { ...res, name: file.name };
                 setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'done', result: resultObj } : item));
                 return resultObj;
             } else {
                 setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'queuing' } : item));
-                await enqueueTranscriptionAction(blob.url, transcriptionModel, classificationModel);
+                await enqueueTranscriptionAction(blobUrl, transcriptionModel, classificationModel);
                 setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'queued' } : item));
                 return { success: true, queued: true, name: file.name };
             }
@@ -229,15 +243,33 @@ export default function Page() {
         addToast(`Batch complete! Click files below to view specific results.`, 'success');
       } else {
         // Sequential mode (Original logic)
+        const results = [];
         for (const [index, audioFile] of audioFiles.entries()) {
           const fileProgress = audioFiles.length > 1 ? ` [${index + 1}/${audioFiles.length}]` : '';
+          setLoadingMessage(`Checking${fileProgress}...`);
+          
+          const fileName = audioFile.name.replace(/\s+/g, '-');
+          const existingBlob = await findBlobByNameAction(fileName);
+          
+          let blobUrl = '';
+          if (existingBlob) {
+            blobUrl = existingBlob.url;
+            setLoadingMessage(`Using existing${fileProgress}...`);
+          } else {
+            setLoadingMessage(`Uploading${fileProgress}...`);
+            const uploadName = `${Date.now()}-${fileName}`;
+            const blob = await upload(uploadName, audioFile, { access: 'public', handleUploadUrl: '/api/upload' });
+            blobUrl = blob.url;
+          }
+
           setLoadingMessage(`Processing${fileProgress}...`);
-          const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
-          const blob = await upload(fileName, audioFile, { access: 'public', handleUploadUrl: '/api/upload' });
-          const res = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
-          if (!res.error) setResult(res);
+          const res = await transcribeAction(blobUrl, false, transcriptionModel, classificationModel);
+          if (!res.error) {
+              setResult(res);
+              results.push(res);
+          }
         }
-        addToast('Sequential processing complete!', 'success');
+        addToast(`Sequential processing of ${results.length} files complete!`, 'success');
       }
       clearInterval(interval);
     } catch (err) {
@@ -450,7 +482,7 @@ export default function Page() {
                     fontWeight: '700', 
                     fontSize: '0.7rem', 
                     textTransform: 'uppercase',
-                    color: item.status === 'done' || item.status === 'queued' ? '#166534' : item.status === 'error' ? '#c53030' : '#0070f3',
+                    color: item.status === 'done' || item.status === 'queued' ? '#166534' : item.status === 'error' ? '#c53030' : item.status === 'existing' ? '#805ad5' : '#0070f3',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.3rem'

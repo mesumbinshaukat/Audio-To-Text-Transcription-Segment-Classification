@@ -143,6 +143,23 @@ Transcription (Audio URL: {{AUDIO_URL}}):
 `;
 
 /**
+ * findBlobByNameAction:
+ * Checks if a file with the given name already exists in the blob storage.
+ * Returns the blob object if found, otherwise null.
+ */
+export async function findBlobByNameAction(fileName) {
+  try {
+    const { blobs } = await list();
+    // Vercel Blob doesn't have a direct "find by name" API, so we filter the list.
+    // We check if any blob's pathname ends with the given filename.
+    return blobs.find(blob => blob.pathname.endsWith(fileName)) || null;
+  } catch (error) {
+    console.error('Failed to find blob:', error);
+    return null;
+  }
+}
+
+/**
  * listBlobsAction:
  * This method retrieves a list of the most recent files you've uploaded to Vercel's storage.
  * It's used to show the "Library" of already-uploaded files so you don't have to upload them again.
