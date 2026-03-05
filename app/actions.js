@@ -379,7 +379,7 @@ export async function transcribeAction(
     if (Array.isArray(geminiResult)) {
       geminiResult = geminiResult[0];
     }
-    
+
     // Inject audioUrl into geminiResult if successful
     geminiResult.Audio_URL = audioUrl;
     geminiResult.audioUrl = audioUrl;
@@ -517,9 +517,9 @@ export async function enqueueTranscriptionAction(audioUrl, transcriptionModelId 
     // If we're on Vercel and NO function URL is set, we must fallback to inline
     if (process.env.VERCEL && !process.env.AZURE_FUNCTION_URL) {
       console.log('[enqueue] No Azure Function URL configured on Vercel, suggesting fallback');
-      return { 
-        fallback: true, 
-        message: 'Background processing not configured (AZURE_FUNCTION_URL missing). Switching to inline mode...' 
+      return {
+        fallback: true,
+        message: 'Background processing not configured (AZURE_FUNCTION_URL missing). Switching to inline mode...'
       };
     }
 
@@ -543,9 +543,9 @@ export async function enqueueTranscriptionAction(audioUrl, transcriptionModelId 
 
     if (!resp.ok) {
       console.warn(`[enqueue] Azure Function unreachable (${resp.status}), suggesting fallback`);
-      return { 
-        fallback: true, 
-        message: `Background service unavailable (${resp.status}). Processing inline...` 
+      return {
+        fallback: true,
+        message: `Background service unavailable (${resp.status}). Processing inline...`
       };
     }
 
@@ -553,44 +553,14 @@ export async function enqueueTranscriptionAction(audioUrl, transcriptionModelId 
   } catch (error) {
     console.error('[enqueue] Failed:', error);
     // If it's a connection error (ECONNREFUSED or timeout), suggest fallback
-    return { 
-      fallback: true, 
-      message: 'Background service connection failed. Processing inline...' 
+    return {
+      fallback: true,
+      message: 'Background service connection failed. Processing inline...'
     };
   }
 }
 
-/**
- * summarizeIssueAction:
- * Uses Gemini Flash 2.5 Lite to create a beautiful summarized story of a specific issue.
- * It injects placeholders for audio playback dynamically.
- */
-export async function summarizeIssueAction(issueData) {
-  try {
-    const classificationModelConfig = CLASSIFICATION_MODELS['gemini-3-flash'] || CLASSIFICATION_MODELS['gemini-2.0-flash'];
-    const vertexModel = classificationModelConfig.vertexModel;
-    const vertex_ai = getVertexAIInstance('global');
 
-    const model = vertex_ai.getGenerativeModel({
-      model: vertexModel,
-      systemInstruction: `You are a helpful store operations assistant. Summarize the following specific STORE SEGMENT into a concise, professional, and readable narrative (max 2 sentences). 
-      
-      Focus ONLY on what happened during this specific segment. 
-      IMPORTANT: You MUST identify the most relevant part of the segment text and place a special marker "[PLAY_AUDIO:START_TIME:END_TIME]" exactly where it fits in the summary.
-      
-      Example: "The customer reported a pricing error on a tobacco product [PLAY_AUDIO:45.2:50.1]."
-      
-      Output ONLY the summarized text with the marker.`,
-    });
-
-    const prompt = JSON.stringify(issueData);
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const summary = response.candidates[0].content.parts[0].text.trim();
-
-    return { summary };
-  } catch (error) {
-    console.error('[summarize] Gemini error:', error);
-    return { error: 'Failed to generate summary' };
-  }
-}
+// summarizeIssueAction was removed to optimize costs.
+// Summaries with [PLAY_AUDIO] markers are now generated during initial classification
+// and stored in Segment_Summary within results.json.

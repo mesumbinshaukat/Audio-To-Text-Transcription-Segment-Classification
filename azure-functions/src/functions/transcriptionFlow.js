@@ -1,30 +1,20 @@
 const { app } = require('@azure/functions');
+const df = require('durable-functions');
 const { VertexAI } = require('@google-cloud/vertexai');
-const { GoogleAuth } = require('google-auth-library');
-const { put } = require('@vercel/blob');
+const { list, put } = require('@vercel/blob');
 const Replicate = require('replicate');
 
-// ─── Model definitions ────────────────────────────────────────────────────────
+// Model definitions
 const TRANSCRIPTION_MODELS = {
     'deepinfra-whisper': { id: 'deepinfra-whisper', label: 'Whisper Large v3 (DeepInfra)', provider: 'deepinfra' },
-    'insanely-fast-whisper': {
-        id: 'insanely-fast-whisper',
-        label: 'Insanely Fast Whisper (Replicate)',
-        provider: 'replicate',
-        replicateModel: 'turian/insanely-fast-whisper-with-video:4f41e90243af171da918f04da3e526b2c247065583ea9b757f2071f573965408'
-    },
-    'incredibly-fast-whisper': {
-        id: 'incredibly-fast-whisper',
-        label: 'Incredibly Fast Whisper (Replicate)',
-        provider: 'replicate',
-        replicateModel: 'vaibhavs10/incredibly-fast-whisper:3ab86df6c8f54c11309d4d1f930ac292bad43ace52d10c80d87eb258b3c9f79c'
-    },
+    'insanely-fast-whisper': { id: 'insanely-fast-whisper', label: 'Insanely Fast Whisper (Replicate)', provider: 'replicate', replicateModel: 'turian/insanely-fast-whisper-with-video:4f41e90243af171da918f04da3e526b2c247065583ea9b757f2071f573965408' },
+    'incredibly-fast-whisper': { id: 'incredibly-fast-whisper', label: 'Incredibly Fast Whisper (Replicate)', provider: 'replicate', replicateModel: 'vaibhavs10/incredibly-fast-whisper:3ab86df6c8f54c11309d4d1f930ac292bad43ace52d10c80d87eb258b3c9f79c' },
 };
 
 const CLASSIFICATION_MODELS = {
     'gemini-3-flash': { id: 'gemini-3-flash', label: 'Gemini 3 Flash', vertexModel: 'gemini-3-flash-preview' },
     'gemini-2.5-flash': { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', vertexModel: 'gemini-2.5-flash' },
-    'gemini-2.5-flash-lite': { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', vertexModel: 'gemini-2.5-flash-lite' },
+    'gemini-2.5-flash-lite': { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite (Low Latency)', vertexModel: 'gemini-2.5-flash-lite' },
     'gemini-3.1-pro': { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro', vertexModel: 'gemini-3.1-pro-preview' },
 };
 
@@ -123,188 +113,179 @@ JSON Structure:
 Transcription:
 `;
 
-// ─── Queue (in-memory) ────────────────────────────────────────────────────────
-// Simple sequential job queue — works on any Node.js version.
-// Production uses Azure Queues / Durable Functions for durability.
-const jobQueue = [];
-let isProcessing = false;
+/**
+ * Activity: ProcessMediaActivity
+ * Handles transcription (Whisper) and classification (Gemini)
+ */
+df.app.activity('ProcessMediaActivity', {
+    handler: async (input) => {
+        const { audioUrl, transcriptionModelId = 'deepinfra-whisper', classificationModelId = 'gemini-3-flash' } = input;
 
-async function processJob(job) {
-    const { audioUrl, transcriptionModelId = 'deepinfra-whisper', classificationModelId = 'gemini-3-flash' } = job;
-    console.log(`[Queue] Processing: ${audioUrl}`);
+        console.log(`[Activity] Starting processing for: ${audioUrl}`);
 
-    try {
-        const transcriptionModelConfig = TRANSCRIPTION_MODELS[transcriptionModelId] || TRANSCRIPTION_MODELS['deepinfra-whisper'];
-        const classificationModelConfig = CLASSIFICATION_MODELS[classificationModelId] || CLASSIFICATION_MODELS['gemini-3-flash'];
-
-        const whisperStart = Date.now();
-        let transcriptionResult;
-
-        // 1. Transcription
-        console.log(`[Queue] Transcription via ${transcriptionModelConfig.provider}`);
-        if (transcriptionModelConfig.provider === 'replicate') {
-            const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
-            const output = await replicate.run(transcriptionModelConfig.replicateModel, {
-                input: { audio: audioUrl, batch_size: 16, beam_size: 5 }
-            });
-            const text = output.text || output.transcription || '';
-            const chunks = output.chunks || output.segments || [];
-            const segments = chunks.map(chunk => ({
-                start: Array.isArray(chunk.timestamp) ? chunk.timestamp[0] : (chunk.start || 0),
-                end: Array.isArray(chunk.timestamp) ? chunk.timestamp[1] : (chunk.end || 0),
-                text: chunk.text || ''
-            }));
-            transcriptionResult = { text, segments };
-        } else {
-            const resp = await fetch(audioUrl);
-            if (!resp.ok) throw new Error(`Failed to fetch audio: ${resp.status} ${resp.statusText}`);
-            const audioBlob = await resp.blob();
-            const data = new FormData();
-            data.append('file', audioBlob, 'audio.mp3');
-            data.append('model', 'openai/whisper-large-v3');
-            data.append('response_format', 'verbose_json');
-
-            console.log(`[Queue] Calling DeepInfra...`);
-            const whisperResp = await fetch('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
-                method: 'POST',
-                headers: { 'Authorization': 'Bearer ' + process.env.DEEPINFRA_API_KEY },
-                body: data,
-            });
-            if (!whisperResp.ok) {
-                const errText = await whisperResp.text();
-                throw new Error(`DeepInfra (${whisperResp.status}): ${errText}`);
-            }
-            const json = await whisperResp.json();
-            transcriptionResult = {
-                text: json.text,
-                segments: (json.segments || []).map(s => ({ start: s.start, end: s.end, text: s.text }))
-            };
-        }
-
-        const whisperTime = ((Date.now() - whisperStart) / 1000).toFixed(2);
-        console.log(`[Queue] Transcription done in ${whisperTime}s`);
-
-        // 2. Classification
-        const geminiStart = Date.now();
-        const vertexModel = classificationModelConfig.vertexModel;
-        const location = (vertexModel.includes('gemini-3') || vertexModel === 'gemini-2.5-flash-lite') ? 'global' : 'asia-south1';
-
-        console.log(`[Queue] Calling VertexAI (${vertexModel}, ${location})`);
-        console.log(`[Queue] Project: ${process.env.GOOGLE_CLOUD_PROJECT}, Email: ${process.env.GOOGLE_CLOUD_CLIENT_EMAIL}`);
-        const pkRaw = process.env.GOOGLE_CLOUD_PRIVATE_KEY;
-        const privateKey = pkRaw?.replace(/\\n/g, '\n');
-
-        const apiEndpoint = location === 'global'
-            ? 'aiplatform.googleapis.com'
-            : `${location}-aiplatform.googleapis.com`;
-
-        const vertex_ai = new VertexAI({
-            project: process.env.GOOGLE_CLOUD_PROJECT,
-            location: location,
-            apiEndpoint: apiEndpoint,
-            googleAuthOptions: {
-                credentials: {
-                    client_email: process.env.GOOGLE_CLOUD_CLIENT_EMAIL,
-                    private_key: privateKey,
-                }
-            }
-        });
-
-        const model = vertex_ai.getGenerativeModel({
-            model: vertexModel,
-            systemInstruction: GEMINI_PROMPT,
-            generationConfig: {
-                responseMimeType: 'application/json',
-                ...(vertexModel.startsWith('gemini-3') && {
-                    thinkingConfig: {
-                        includeThoughts: false,
-                        thinkingLevel: vertexModel === 'gemini-3-flash-preview' ? 'MINIMAL' : 'LOW'
-                    }
-                })
-            }
-        });
-
-        const prompt = transcriptionResult.segments.length > 0
-            ? transcriptionResult.segments.map(s => `${s.start.toFixed(2)} - ${s.end.toFixed(2)} ${s.text.trim()}`).join('\n')
-            : transcriptionResult.text;
-
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const usage = response.usageMetadata || {};
-        const rawText = response.candidates[0].content.parts[0].text;
-        const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-        const geminiResult = JSON.parse(cleaned);
-        geminiResult.usage = {
-            promptTokens: usage.promptTokenCount || 0,
-            candidatesTokens: usage.candidatesTokenCount || 0,
-            totalTokens: (usage.promptTokenCount || 0) + (usage.candidatesTokenCount || 0),
-        };
-
-        const geminiTime = ((Date.now() - geminiStart) / 1000).toFixed(2);
-        console.log(`[Queue] Classification done in ${geminiTime}s`);
-
-        // 3. Save result to Vercel Blob
-        const baseUrl = (process.env.VERCEL_BLOB_BASE_URL || 'https://uqmnw59bvtls7jgj.public.blob.vercel-storage.com').replace(/\/$/, '');
-        let history = [];
         try {
-            const histRes = await fetch(`${baseUrl}/${RESULTS_FILE}`, { cache: 'no-store' });
-            if (histRes.ok) history = await histRes.json();
-        } catch (_) {
-            console.warn('[Queue] No existing history, starting fresh.');
-        }
+            const transcriptionModelConfig = TRANSCRIPTION_MODELS[transcriptionModelId] || TRANSCRIPTION_MODELS['deepinfra-whisper'];
+            const classificationModelConfig = CLASSIFICATION_MODELS[classificationModelId] || CLASSIFICATION_MODELS['gemini-3-flash'];
 
-        const newEntry = {
-            id: Date.now().toString(),
-            timestamp: new Date().toISOString(),
-            whisperTime,
-            geminiTime,
-            transcriptionModel: transcriptionModelConfig.label,
-            classificationModel: classificationModelConfig.label,
-            totalTime: (parseFloat(whisperTime) + parseFloat(geminiTime)).toFixed(2),
-            ...geminiResult,
-            Audio_URL: audioUrl || null,
-            audioUrl: audioUrl || null,
-            Segments: Array.isArray(geminiResult.Segments) 
-                ? geminiResult.Segments.map(s => ({ ...s, audioUrl: audioUrl || null })) 
-                : []
-        };
+            let transcriptionResult;
+            const whisperStart = Date.now();
 
-        history.push(newEntry);
-        await put(RESULTS_FILE, JSON.stringify(history, null, 2), {
-            access: 'public',
-            contentType: 'application/json',
-            addRandomSuffix: false,
-            allowOverwrite: true,
-            token: process.env.BLOB_READ_WRITE_TOKEN
-        });
+            // 1. Transcription
+            console.log(`[Activity] Transcription starting with provider: ${transcriptionModelConfig.provider}`);
+            if (transcriptionModelConfig.provider === 'replicate') {
+                const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
+                const output = await replicate.run(transcriptionModelConfig.replicateModel, {
+                    input: { audio: audioUrl, batch_size: 16, beam_size: 5 }
+                });
+                const text = output.text || output.transcription || '';
+                const chunks = output.chunks || output.segments || [];
+                const segments = chunks.map(chunk => ({
+                    start: Array.isArray(chunk.timestamp) ? chunk.timestamp[0] : (chunk.start || 0),
+                    end: Array.isArray(chunk.timestamp) ? chunk.timestamp[1] : (chunk.end || 0),
+                    text: chunk.text || ''
+                }));
+                transcriptionResult = { text, segments };
+            } else {
+                console.log(`[Activity] Fetching audio...`);
+                const resp = await fetch(audioUrl);
+                if (!resp.ok) throw new Error(`Failed to fetch audio: ${resp.status} ${resp.statusText}`);
+                const audioBlob = await resp.blob();
+                const data = new FormData();
+                data.append('file', audioBlob, 'audio.mp3');
+                data.append('model', 'openai/whisper-large-v3');
+                data.append('response_format', 'verbose_json');
 
-        console.log(`[Queue] Saved result id=${newEntry.id}`);
-    } catch (err) {
-        console.error(`[Queue] Job failed for ${audioUrl}:`);
-        console.error(`Error: ${err.message}`);
-        console.error(`Stack: ${err.stack}`);
-        if (err.cause) {
-            console.error(`Cause: ${err.cause.message}`);
-            console.error(`Cause Stack: ${err.cause.stack}`);
+                console.log(`[Activity] Sending to DeepInfra...`);
+                const whisperResp = await fetch('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + process.env.DEEPINFRA_API_KEY },
+                    body: data,
+                });
+                if (!whisperResp.ok) {
+                    const errText = await whisperResp.text();
+                    throw new Error(`DeepInfra failed (${whisperResp.status}): ${errText}`);
+                }
+                const json = await whisperResp.json();
+                transcriptionResult = {
+                    text: json.text,
+                    segments: (json.segments || []).map(s => ({ start: s.start, end: s.end, text: s.text }))
+                };
+            }
+
+            const whisperTime = ((Date.now() - whisperStart) / 1000).toFixed(2);
+            console.log(`[Activity] Transcription done in ${whisperTime}s`);
+
+            // 2. Classification
+            const geminiStart = Date.now();
+            const vertexModel = classificationModelConfig.vertexModel;
+            const location = (vertexModel.includes('gemini-3') || vertexModel === 'gemini-2.5-flash-lite') ? 'global' : 'asia-south1';
+
+            console.log(`[Activity] Initializing VertexAI (location: ${location}, model: ${vertexModel})`);
+            const vertex_ai = new VertexAI({
+                project: process.env.GOOGLE_CLOUD_PROJECT,
+                location,
+                apiEndpoint: location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`,
+                googleAuthOptions: {
+                    credentials: {
+                        client_email: process.env.GOOGLE_CLOUD_CLIENT_EMAIL,
+                        private_key: process.env.GOOGLE_CLOUD_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+                    }
+                }
+            });
+
+            const model = vertex_ai.getGenerativeModel({
+                model: vertexModel,
+                systemInstruction: GEMINI_PROMPT,
+                generationConfig: {
+                    responseMimeType: 'application/json',
+                    ...(vertexModel.startsWith('gemini-3') && {
+                        thinkingConfig: { includeThoughts: false, thinkingLevel: vertexModel === 'gemini-3-flash-preview' ? 'MINIMAL' : 'LOW' }
+                    })
+                }
+            });
+
+            const prompt = transcriptionResult.segments.length > 0
+                ? transcriptionResult.segments.map(seg => `${seg.start.toFixed(2)} - ${seg.end.toFixed(2)} ${seg.text.trim()}`).join('\n')
+                : transcriptionResult.text;
+
+            console.log(`[Activity] Sending to Gemini...`);
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const usage = response.usageMetadata || {};
+            const rawText = response.candidates[0].content.parts[0].text;
+            const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+            const geminiResult = JSON.parse(cleaned);
+
+            geminiResult.usage = {
+                promptTokens: usage.promptTokenCount || 0,
+                candidatesTokens: usage.candidatesTokenCount || 0,
+                totalTokens: (usage.promptTokenCount || 0) + (usage.candidatesTokenCount || 0),
+            };
+
+            const geminiTime = ((Date.now() - geminiStart) / 1000).toFixed(2);
+            console.log(`[Activity] Classification done in ${geminiTime}s`);
+
+            // 3. Save result to Vercel Blob
+            const baseUrl = (process.env.VERCEL_BLOB_BASE_URL || 'https://uqmnw59bvtls7jgj.public.blob.vercel-storage.com').replace(/\/$/, '');
+
+            let history = [];
+            try {
+                const histRes = await fetch(`${baseUrl}/${RESULTS_FILE}`, { cache: 'no-store' });
+                if (histRes.ok) history = await histRes.json();
+            } catch (e) {
+                console.warn(`[Activity] No existing history found, starting fresh.`);
+            }
+
+            const newEntry = {
+                id: Date.now().toString(),
+                timestamp: new Date().toISOString(),
+                whisperTime,
+                geminiTime,
+                transcriptionModel: transcriptionModelConfig.label,
+                classificationModel: classificationModelConfig.label,
+                totalTime: (parseFloat(whisperTime) + parseFloat(geminiTime)).toFixed(2),
+                ...geminiResult
+            };
+
+            history.push(newEntry);
+            const putResult = await put(RESULTS_FILE, JSON.stringify(history, null, 2), {
+                access: 'public',
+                contentType: 'application/json',
+                addRandomSuffix: false,
+                allowOverwrite: true,
+                token: process.env.BLOB_READ_WRITE_TOKEN
+            });
+
+            console.log(`[Activity] Results saved to ${putResult.url}`);
+            return { success: true, id: newEntry.id };
+
+        } catch (error) {
+            console.error(`[Activity] FAILED: ${error.message}`);
+            console.error(error.stack);
+            throw error;
         }
     }
-}
+});
 
-async function runQueue() {
-    if (isProcessing) return;
-    isProcessing = true;
-    while (jobQueue.length > 0) {
-        const job = jobQueue.shift();
-        await processJob(job);
-    }
-    isProcessing = false;
-}
+/**
+ * Orchestrator
+ */
+df.app.orchestration('TranscriptionOrchestrator', function* (context) {
+    const input = context.df.getInput();
+    console.log(`[Orchestrator] Starting for: ${input.audioUrl}`);
+    yield context.df.callActivity('ProcessMediaActivity', input);
+    console.log(`[Orchestrator] Finished for: ${input.audioUrl}`);
+});
 
-// ─── HTTP Trigger — Vercel Blob Webhook endpoint ──────────────────────────────
+/**
+ * HTTP Trigger — Vercel Blob Webhook endpoint
+ */
 app.http('HttpBlobTrigger', {
     methods: ['POST'],
     authLevel: 'anonymous',
+    extraInputs: [df.input.durableClient()],
     handler: async (request, context) => {
+        const client = df.getClient(context);
         const body = await request.json();
 
         if (body.type === 'blob.created') {
@@ -312,40 +293,16 @@ app.http('HttpBlobTrigger', {
             const transcriptionModelId = body.payload.transcriptionModelId || 'deepinfra-whisper';
             const classificationModelId = body.payload.classificationModelId || 'gemini-3-flash';
 
-            context.log(`[Webhook] Enqueued: ${blobUrl} (queue size before: ${jobQueue.length})`);
+            console.log(`[Webhook] New blob: ${blobUrl}`);
 
-            jobQueue.push({ audioUrl: blobUrl, transcriptionModelId, classificationModelId });
+            const instanceId = await client.startNew('TranscriptionOrchestrator', {
+                input: { audioUrl: blobUrl, transcriptionModelId, classificationModelId }
+            });
 
-            // Start processing in background (non-blocking response)
-            setImmediate(() => runQueue());
-
-            return {
-                status: 202,
-                jsonBody: {
-                    message: 'Job enqueued',
-                    queuePosition: jobQueue.length,
-                    audioUrl: blobUrl
-                }
-            };
+            context.log(`Started orchestration ID: '${instanceId}'`);
+            return client.createCheckStatusResponse(request, instanceId);
         }
 
-        return { status: 200, jsonBody: { message: 'Not a blob.created event' } };
-    }
-});
-
-// ─── Health Check ─────────────────────────────────────────────────────────────
-app.http('HealthCheck', {
-    methods: ['GET'],
-    authLevel: 'anonymous',
-    route: 'health',
-    handler: async (_request, _context) => {
-        return {
-            status: 200,
-            jsonBody: {
-                status: 'ok',
-                queueLength: jobQueue.length,
-                isProcessing
-            }
-        };
+        return { status: 200, body: 'Not a blob.created event' };
     }
 });

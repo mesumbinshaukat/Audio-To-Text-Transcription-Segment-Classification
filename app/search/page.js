@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { getAnalyticsAction, summarizeIssueAction } from '../actions';
+import { getAnalyticsAction } from '../actions';
 import { Search, Play, Pause, ArrowLeft, Clock, MessageSquare, AlertCircle, ChevronRight, Loader2, Cpu } from 'lucide-react';
 
 // Theme Colors (Matches Dashboard)
@@ -52,9 +52,9 @@ function TruncatedAudioPlayer({ url, start, end, onEnded }) {
 
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', margin: '0 4px' }}>
-      <audio 
-        ref={audioRef} 
-        src={url} 
+      <audio
+        ref={audioRef}
+        src={url}
         onTimeUpdate={handleTimeUpdate}
         onEnded={() => setIsPlaying(false)}
       />
@@ -88,10 +88,6 @@ export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [summary, setSummary] = useState(null);
-  const [summarizing, setSummarizing] = useState(false);
-
-  // Cache for summaries to make it fast
-  const summaryCache = useRef({});
 
   useEffect(() => {
     const fetchData = async () => {
@@ -128,43 +124,26 @@ export default function SearchPage() {
       });
     });
 
-    if (!searchQuery.trim()) return flattened.slice(0, 40); 
-    
+    if (!searchQuery.trim()) return flattened.slice(0, 40);
+
     const query = searchQuery.toLowerCase();
     return flattened.filter(seg => {
       const text = (seg.Segment_original || '').toLowerCase();
       const summaryText = (seg.Segment_Summary || '').toLowerCase();
-      const classificationMatch = seg.SegmentClassification?.some(c => 
-        c.Category?.toLowerCase().includes(query) || 
-        c.EventType?.toLowerCase().includes(query) || 
-        c.Event?.toLowerCase().includes(query) || 
+      const classificationMatch = seg.SegmentClassification?.some(c =>
+        c.Category?.toLowerCase().includes(query) ||
+        c.EventType?.toLowerCase().includes(query) ||
+        c.Event?.toLowerCase().includes(query) ||
         c.SubType?.toLowerCase().includes(query)
       );
-      
+
       return text.includes(query) || summaryText.includes(query) || classificationMatch;
     });
   }, [data, searchQuery]);
 
-  const handleSelectIssue = async (issue) => {
+  const handleSelectIssue = (issue) => {
     setSelectedIssue(issue);
-    const issueKey = issue.compositeId;
-    
-    if (summaryCache.current[issueKey]) {
-      setSummary(summaryCache.current[issueKey]);
-      return;
-    }
-
-    setSummarizing(true);
-    setSummary(null);
-
-    const res = await summarizeIssueAction(issue);
-    if (res.summary) {
-      setSummary(res.summary);
-      summaryCache.current[issueKey] = res.summary;
-    } else {
-      setSummary("Failed to generate summary. Please try again.");
-    }
-    setSummarizing(false);
+    setSummary(issue.Segment_Summary || issue.Segment_original || "No detailed summary available.");
   };
 
   const renderSummaryWithAudio = (text, audioUrl) => {
@@ -176,7 +155,7 @@ export default function SearchPage() {
 
     return parts.map((part, i) => {
       const match = part.match(/\[PLAY_AUDIO:\s*([\d.:]+)\s*:\s*([\d.:]+)\s*\]/i);
-      
+
       if (match) {
         if (!audioUrl) {
           return (
@@ -185,7 +164,7 @@ export default function SearchPage() {
             </span>
           );
         }
-        
+
         // Helper to convert time string (HH:MM:SS or just seconds) to strictly seconds
         const toSeconds = (val) => {
           if (!val.includes(':')) return parseFloat(val);
@@ -196,11 +175,11 @@ export default function SearchPage() {
         };
 
         return (
-          <TruncatedAudioPlayer 
-            key={i} 
-            url={audioUrl} 
-            start={toSeconds(match[1])} 
-            end={toSeconds(match[2])} 
+          <TruncatedAudioPlayer
+            key={i}
+            url={audioUrl}
+            start={toSeconds(match[1])}
+            end={toSeconds(match[2])}
           />
         );
       }
@@ -227,13 +206,13 @@ export default function SearchPage() {
       </nav>
 
       <main style={{ maxWidth: '1200px', margin: '2rem auto', padding: '0 1rem', display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '2rem' }}>
-        
+
         {/* Left Column: Search & List */}
         <section style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div style={{ position: 'relative' }}>
             <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: COLORS.textMuted }} />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Search by category, issue, or keyword..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -272,9 +251,9 @@ export default function SearchPage() {
                   <p style={{ fontSize: '0.9rem', color: COLORS.textMuted }}>No matching issues found.</p>
                 </div>
               ) : (
-                 filteredIssues.map((item) => (
-                  <div 
-                    key={item.compositeId} 
+                filteredIssues.map((item) => (
+                  <div
+                    key={item.compositeId}
                     onClick={() => handleSelectIssue(item)}
                     style={{
                       padding: '1.25rem',
@@ -317,7 +296,7 @@ export default function SearchPage() {
           ) : (
             <div style={{ background: 'white', borderRadius: '16px', border: `1px solid ${COLORS.border}`, padding: '2.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.03)', animation: 'fadeIn 0.3s ease-out' }}>
               <header style={{ marginBottom: '2.5rem' }}>
-                 <h2 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, letterSpacing: '-0.025em' }}>
+                <h2 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, letterSpacing: '-0.025em' }}>
                   {selectedIssue.SegmentClassification?.[0]?.EventType || selectedIssue.SegmentClassification?.[0]?.Event || 'Issue Details'}
                 </h2>
                 <p style={{ fontSize: '0.9rem', color: COLORS.textMuted, marginTop: '0.5rem' }}>
@@ -329,17 +308,19 @@ export default function SearchPage() {
                 <h4 style={{ fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', color: COLORS.primary, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                   <Cpu size={14} /> AI Intelligence Summary
                 </h4>
-                
-                {summarizing ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem 0' }}>
-                    <Loader2 size={24} className="animate-spin" style={{ color: COLORS.primary }} />
-                    <span style={{ fontSize: '0.95rem', color: COLORS.textMuted }}>Drafting intelligent brief...</span>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: '1.25rem', lineHeight: '1.7', color: '#1e3a8a', fontWeight: '500' }}>
-                    {renderSummaryWithAudio(summary, selectedIssue.audioUrl || selectedIssue.audio_url || selectedIssue.url)}
-                  </div>
-                )}
+
+                <div style={{ fontSize: '1.25rem', lineHeight: '1.7', color: '#1e3a8a', fontWeight: '500' }}>
+                  {summary}
+                  {selectedIssue && (
+                    <div style={{ marginTop: '1rem' }}>
+                      <TruncatedAudioPlayer
+                        url={selectedIssue.audioUrl || selectedIssue.audio_url || selectedIssue.url}
+                        start={selectedIssue.Starting_Second || 0}
+                        end={selectedIssue.Ending_Second || 0}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
