@@ -209,8 +209,9 @@ export default function Page() {
             if (idx < MAX_LOCAL) {
                 setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'processing' } : item));
                 const res = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
-                setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'done' } : item));
-                return { ...res, name: file.name };
+                const resultObj = { ...res, name: file.name };
+                setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'done', result: resultObj } : item));
+                return resultObj;
             } else {
                 setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'queuing' } : item));
                 await enqueueTranscriptionAction(blob.url, transcriptionModel, classificationModel);
@@ -225,7 +226,7 @@ export default function Page() {
 
         const lastSuccess = results.reverse().find(r => !r.error && !r.queued);
         if (lastSuccess) setResult(lastSuccess);
-        addToast(`Batch processing complete! (${toProcessLocally.length} local, ${toQueue.length} queued)`, 'success');
+        addToast(`Batch complete! Click files below to view specific results.`, 'success');
       } else {
         // Sequential mode (Original logic)
         for (const [index, audioFile] of audioFiles.entries()) {
@@ -271,11 +272,28 @@ export default function Page() {
           setSelectedBlobs([]);
         }
       } else {
+        const initialQueue = urls.map(u => ({ name: u.split('/').pop(), status: 'pending' }));
+        setProcessingQueue(initialQueue);
         setLoadingMessage(`Processing ${urls.length} files concurrently...`);
-        await Promise.all(urls.map(url => transcribeAction(url, false, transcriptionModel, classificationModel)));
-        addToast(`Parallel analysis of ${urls.length} files complete!`, 'success');
+        
+        const results = await Promise.all(urls.map(async (url, idx) => {
+           try {
+             setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'processing' } : item));
+             const res = await transcribeAction(url, false, transcriptionModel, classificationModel);
+             const resultObj = { ...res, name: url.split('/').pop() };
+             setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'done', result: resultObj } : item));
+             return resultObj;
+           } catch (err) {
+             setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'error' } : item));
+             return { error: err.message };
+           }
+        }));
+
+        const lastSuccess = results.reverse().find(r => !r.error);
+        if (lastSuccess) setResult(lastSuccess);
+        addToast(`Library batch complete! View results below.`, 'success');
         setSelectedBlobs([]);
-        fetchBlobs(); // Refresh to clear unprocessed state if any
+        fetchBlobs();
       }
     } catch (err) {
       addToast('Batch failed: ' + (err.message || 'Unknown'), 'error');
@@ -409,15 +427,36 @@ export default function Page() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {processingQueue.map((item, idx) => (
-                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', padding: '0.4rem', borderRadius: '6px', background: '#f8f9fc' }}>
-                  <span style={{ fontWeight: '500', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{item.name}</span>
+                <div 
+                  key={idx} 
+                  onClick={() => item.result && setResult(item.result)}
+                  style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    fontSize: '0.8rem', 
+                    padding: '0.4rem', 
+                    borderRadius: '6px', 
+                    background: item.status === 'done' ? (result?.name === item.name ? '#e0f2fe' : '#f0f9ff') : '#f8f9fc',
+                    cursor: item.status === 'done' ? 'pointer' : 'default',
+                    border: item.status === 'done' && result?.name === item.name ? '1px solid #7dd3fc' : '1px solid transparent',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <span style={{ fontWeight: '500', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>
+                    {item.status === 'done' ? '👁️ ' : ''}{item.name}
+                  </span>
                   <span style={{ 
                     fontWeight: '700', 
                     fontSize: '0.7rem', 
                     textTransform: 'uppercase',
-                    color: item.status === 'done' || item.status === 'queued' ? '#166534' : item.status === 'error' ? '#c53030' : '#0070f3'
+                    color: item.status === 'done' || item.status === 'queued' ? '#166534' : item.status === 'error' ? '#c53030' : '#0070f3',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem'
                   }}>
                     {item.status}
+                    {item.status === 'done' && <span style={{ fontSize: '0.6rem', color: '#0070f3' }}>[VIEW]</span>}
                   </span>
                 </div>
               ))}
