@@ -127,10 +127,8 @@ export default function Page() {
   const [transcriptionModel, setTranscriptionModel] = useState('deepinfra-whisper');
   const [classificationModel, setClassificationModel] = useState('gemini-3-flash');
 
-  // Concurrency & Multi-select State
+  const [isConcurrentMode, setIsConcurrentMode] = useState(true);
   const [processingQueue, setProcessingQueue] = useState([]);
-
-  // ... rest of the component
   const [selectedBlobs, setSelectedBlobs] = useState([]);
 
   const addToast = (message, type = 'info') => {
