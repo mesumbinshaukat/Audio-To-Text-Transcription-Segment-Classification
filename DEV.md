@@ -23,7 +23,8 @@ This document provides a deep dive into the technical architecture, optimization
    - [Vercel Blob JSON Storage](#vercel-blob-json-storage)
    - [Dashboard Implementation](#dashboard-implementation)
 7. [Environment Variables & Setup](#environment-variables--setup)
-8. [Vercel Deployment & Limits](#vercel-deployment--limits)
+826. [Vercel Deployment & Limits](#vercel-deployment--limits)
+27. [Concurrency Benchmarks](#concurrency-benchmarks)
 
 ---
 
@@ -151,3 +152,20 @@ Ensure the following are configured exactly as shown:
 ## Vercel Deployment & Limits
 - **Max Duration:** Set to `maxDuration: 60` in `vercel.json` if possible, as long transcriptions + classifications can take 20-40 seconds.
 - **CORS:** Global headers are defined in `vercel.json` to allow cross-origin requests for the library browsing feature.
+
+---
+
+## Concurrency Benchmarks
+
+Tested on March 6, 2026, to verify the boundaries of local parallel processing:
+
+| Provider | Concurrency | Success Rate | Avg. Latency | Theoretical Limit |
+| :--- | :--- | :--- | :--- | :--- |
+| **DeepInfra (Whisper)** | 20 | 100% | ~12-25s | **200 Concurrent** |
+| **Google Vertex (Gemini)** | 20 | 100% | ~5-7s | **2,000 RPM** (Paid Tier) |
+| **Replicate** | 1 | 100% | ~2s | 6 RPM (Unpaid Tier) |
+
+### Hybrid Concurrency Architecture
+The application implements a **Hybrid Overflow** mechanism to balance speed and reliability:
+1. **Local Parallel (0-20 files)**: Files are processed immediately in the browser via parallel Server Action calls. This provides instant results for standard batches.
+2. **Background Overflow (>20 files)**: Files beyond the 20-unit threshold are automatically enqueued to **Azure Durable Functions**. This prevents browser resource exhaustion and ensures large batches complete reliably in the background.

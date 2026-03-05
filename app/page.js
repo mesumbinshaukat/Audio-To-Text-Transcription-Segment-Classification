@@ -128,7 +128,9 @@ export default function Page() {
   const [classificationModel, setClassificationModel] = useState('gemini-3-flash');
 
   // Concurrency & Multi-select State
-  const [isConcurrentMode, setIsConcurrentMode] = useState(true);
+  const [processingQueue, setProcessingQueue] = useState([]);
+
+  // ... rest of the component
   const [selectedBlobs, setSelectedBlobs] = useState([]);
 
   const addToast = (message, type = 'info') => {
@@ -186,45 +188,46 @@ export default function Page() {
 
     try {
       if (isConcurrentMode && audioFiles.length > 1) {
-        if (audioFiles.length > 10) {
-          setLoadingMessage(`Batch too large (${audioFiles.length}). Checking background service...`);
-          // Try to queue all
-          const queueResults = await Promise.all(audioFiles.map(async (file) => {
-            const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-            const blob = await upload(fileName, file, { access: 'public', handleUploadUrl: '/api/upload' });
-            return await enqueueTranscriptionAction(blob.url, transcriptionModel, classificationModel);
-          }));
+        const MAX_LOCAL = 20;
+        const toProcessLocally = audioFiles.slice(0, MAX_LOCAL);
+        const toQueue = audioFiles.slice(MAX_LOCAL);
 
-          const failed = queueResults.filter(r => r.fallback);
-          if (failed.length > 0) {
-            addToast(`Queue full/unavailable. Processing first 10 concurrently, please wait...`, 'warning');
-            // Process first 10 concurrently as requested
-            const firstTen = audioFiles.slice(0, 10);
-            setLoadingMessage(`Processing benchmark limit (10)...`);
-            await Promise.all(firstTen.map(async (file) => {
-              const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-              const blob = await upload(fileName, file, { access: 'public', handleUploadUrl: '/api/upload' });
-              return await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
-            }));
-            addToast('Batch of 10 complete. Remaining files skipped due to capacity limits.', 'info');
-          } else {
-            addToast(`All ${audioFiles.length} files queued successfully!`, 'success');
-            setTimeout(() => setView('library'), 2000);
-          }
-        } else {
-          // Parallel processing for <= 10
-          setLoadingMessage(`Processing ${audioFiles.length} files concurrently...`);
-          const results = await Promise.all(audioFiles.map(async (file, idx) => {
-            const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-            const blob = await upload(fileName, file, { access: 'public', handleUploadUrl: '/api/upload' });
-            const res = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
-            return { ...res, name: file.name };
-          }));
+        // Initialize queue status
+        const initialQueue = audioFiles.map(f => ({ name: f.name, status: 'pending' }));
+        setProcessingQueue(initialQueue);
 
-          const lastSuccess = results.reverse().find(r => !r.error);
-          if (lastSuccess) setResult(lastSuccess);
-          addToast(`Parallel processing of ${audioFiles.length} files complete!`, 'success');
+        setLoadingMessage(`Processing ${toProcessLocally.length} files locally...`);
+        if (toQueue.length > 0) {
+            addToast(`${toQueue.length} files exceeding local limit will be queued for background processing.`, 'info');
         }
+
+        const results = await Promise.all(audioFiles.map(async (file, idx) => {
+          const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
+          
+          try {
+            setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'uploading' } : item));
+            const blob = await upload(fileName, file, { access: 'public', handleUploadUrl: '/api/upload' });
+            
+            if (idx < MAX_LOCAL) {
+                setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'processing' } : item));
+                const res = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
+                setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'done' } : item));
+                return { ...res, name: file.name };
+            } else {
+                setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'queuing' } : item));
+                await enqueueTranscriptionAction(blob.url, transcriptionModel, classificationModel);
+                setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'queued' } : item));
+                return { success: true, queued: true, name: file.name };
+            }
+          } catch (err) {
+            setProcessingQueue(prev => prev.map((item, i) => i === idx ? { ...item, status: 'error' } : item));
+            return { error: err.message, name: file.name };
+          }
+        }));
+
+        const lastSuccess = results.reverse().find(r => !r.error && !r.queued);
+        if (lastSuccess) setResult(lastSuccess);
+        addToast(`Batch processing complete! (${toProcessLocally.length} local, ${toQueue.length} queued)`, 'success');
       } else {
         // Sequential mode (Original logic)
         for (const [index, audioFile] of audioFiles.entries()) {
@@ -391,6 +394,38 @@ export default function Page() {
             </label>
           </div>
         </div>
+
+        {/* Batch Status UI */}
+        {processingQueue.length > 0 && (
+          <div style={{
+            background: '#ffffff',
+            border: '1px solid #e8eaf0',
+            borderRadius: '12px',
+            padding: '1rem',
+            marginBottom: '2rem',
+            maxHeight: '200px',
+            overflowY: 'auto'
+          }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.75rem' }}>
+              Batch Progress
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {processingQueue.map((item, idx) => (
+                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', padding: '0.4rem', borderRadius: '6px', background: '#f8f9fc' }}>
+                  <span style={{ fontWeight: '500', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{item.name}</span>
+                  <span style={{ 
+                    fontWeight: '700', 
+                    fontSize: '0.7rem', 
+                    textTransform: 'uppercase',
+                    color: item.status === 'done' || item.status === 'queued' ? '#166534' : item.status === 'error' ? '#c53030' : '#0070f3'
+                  }}>
+                    {item.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Switcher Buttons */}
         <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '2rem', background: '#f1f1f4', padding: '0.35rem', borderRadius: '12px' }}>

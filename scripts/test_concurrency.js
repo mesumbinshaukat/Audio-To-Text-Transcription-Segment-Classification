@@ -9,7 +9,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN;
 const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
 
-const AUDIO_URL = 'https://uqmnw59bvtls7jgj.public.blob.vercel-storage.com/rec16.wav';
+const AUDIO_URL = 'https://uqmnw59bvtls7jgj.public.blob.vercel-storage.com/1772564617220-short-just-a-trans.wav';
 
 const REPLICATE_MODELS = [
     'turian/insanely-fast-whisper-with-video:4f41e90243af171da918f04da3e526b2c247065583ea9b757f2071f573965408',
@@ -97,10 +97,14 @@ async function runTests() {
     await testDeepInfra(3);
     await testReplicate(REPLICATE_MODELS[1], 'Incredibly Fast', 3);
 
-    // CONCURRENCY 5
-    console.log("\n--- Testing High Concurrency (5) ---");
-    await testDeepInfra(5);
-    await testReplicate(REPLICATE_MODELS[1], 'Incredibly Fast', 5);
+    // CONCURRENCY 10
+    console.log("\n--- Testing High Concurrency (10) ---");
+    await testDeepInfra(10);
+    await testReplicate(REPLICATE_MODELS[1], 'Incredibly Fast', 10);
+
+    // CONCURRENCY 20 (Stress Test)
+    console.log("\n--- Testing Stress Load (20) ---");
+    await testDeepInfra(20);
 }
 
 runTests().catch(console.error);
