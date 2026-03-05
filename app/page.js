@@ -369,7 +369,7 @@ export default function Page() {
           </div>
           <div style={{ marginTop: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #e8eaf0', paddingTop: '1rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#111' }}>Concurrent Mode (Limit: 10)</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#111' }}>Concurrent Mode (Limit: 20)</span>
               <span style={{ fontSize: '0.7rem', color: '#666' }}>Process multiple files at once using a parallel pool.</span>
             </div>
             <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px' }}>
