@@ -8,6 +8,17 @@
       }
     }
   },
+  "extensions": {
+    "durableTask": {
+      "hubName": "TranscriptionHub",
+      "storageProvider": {
+        "type": "AzureStorage",
+        "connectionStringName": "AzureWebJobsStorage"
+      },
+      "maxConcurrentActivityFunctions": 5,
+      "maxConcurrentOrchestratorFunctions": 5
+    }
+  },
   "extensionBundle": {
     "id": "Microsoft.Azure.Functions.ExtensionBundle",
     "version": "[4.*, 5.0.0)"

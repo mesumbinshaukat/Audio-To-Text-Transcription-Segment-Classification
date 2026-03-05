@@ -127,6 +127,10 @@ export default function Page() {
   const [transcriptionModel, setTranscriptionModel] = useState('deepinfra-whisper');
   const [classificationModel, setClassificationModel] = useState('gemini-3-flash');
 
+  // Concurrency & Multi-select State
+  const [isConcurrentMode, setIsConcurrentMode] = useState(true);
+  const [selectedBlobs, setSelectedBlobs] = useState([]);
+
   const addToast = (message, type = 'info') => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, message, type }]);
@@ -175,81 +179,105 @@ export default function Page() {
     setResult(null);
     setTimer(0);
 
-    const isMultiple = audioFiles.length > 1;
     const startTime = Date.now();
     const interval = setInterval(() => {
       setTimer(((Date.now() - startTime) / 1000).toFixed(1));
     }, 100);
 
     try {
-      for (const [index, audioFile] of audioFiles.entries()) {
-        const fileProgress = isMultiple ? ` [${index + 1}/${audioFiles.length}]` : '';
-        const existingBlob = blobList.find(b => b.pathname.endsWith(audioFile.name.replace(/\s+/g, '-')));
-        let blob;
+      if (isConcurrentMode && audioFiles.length > 1) {
+        if (audioFiles.length > 10) {
+          setLoadingMessage(`Batch too large (${audioFiles.length}). Checking background service...`);
+          // Try to queue all
+          const queueResults = await Promise.all(audioFiles.map(async (file) => {
+            const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
+            const blob = await upload(fileName, file, { access: 'public', handleUploadUrl: '/api/upload' });
+            return await enqueueTranscriptionAction(blob.url, transcriptionModel, classificationModel);
+          }));
 
-        if (existingBlob) {
-          console.log('[upload] Found existing blob:', existingBlob.url);
-          addToast(`Referencing existing: ${audioFile.name}`, 'info');
-          blob = existingBlob;
-        } else {
-          try {
-            setLoadingMessage(`Uploading${fileProgress}...`);
-            const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
-            console.log('[upload] Starting Vercel Blob upload for:', fileName, 'Size:', audioFile.size);
-            
-            blob = await upload(fileName, audioFile, {
-              access: 'public',
-              handleUploadUrl: '/api/upload',
-            });
-            
-            console.log('[upload] Success! Blob URL:', blob.url);
-            addToast(`Uploaded: ${audioFile.name}`, 'success');
-            // Refresh blob list in background
-            fetchBlobs();
-          } catch (uploadErr) {
-            console.error('[upload] Vercel Blob Error:', uploadErr);
-            addToast(`Upload failed: ${uploadErr.message}`, 'error');
-            throw uploadErr; // Exit early if upload fails
-          }
-        }
-
-        if (isMultiple) {
-          setLoadingMessage(`Queuing${fileProgress}...`);
-          const res = await enqueueTranscriptionAction(blob.url, transcriptionModel, classificationModel);
-          
-          if (res.fallback) {
-            addToast(res.message, 'info');
-            setLoadingMessage(`Processing inline${fileProgress}...`);
-            const inlineRes = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
-            if (inlineRes.error) addToast(inlineRes.error, 'error');
-            else {
-              setResult({ ...inlineRes, audioUrl: inlineRes.audioUrl || blob.url }); 
-              addToast(`Processed ${audioFile.name} inline`, 'success');
-            }
-          } else if (res.error) {
-            addToast(res.error, 'error');
-          }
-        } else {
-          setLoadingMessage('Processing...');
-          const res = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
-          if (res.error) {
-            addToast(res.error, 'error');
+          const failed = queueResults.filter(r => r.fallback);
+          if (failed.length > 0) {
+            addToast(`Queue full/unavailable. Processing first 10 concurrently, please wait...`, 'warning');
+            // Process first 10 concurrently as requested
+            const firstTen = audioFiles.slice(0, 10);
+            setLoadingMessage(`Processing benchmark limit (10)...`);
+            await Promise.all(firstTen.map(async (file) => {
+              const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
+              const blob = await upload(fileName, file, { access: 'public', handleUploadUrl: '/api/upload' });
+              return await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
+            }));
+            addToast('Batch of 10 complete. Remaining files skipped due to capacity limits.', 'info');
           } else {
-            setResult({ ...res, audioUrl: res.audioUrl || blob.url });
-            addToast('Processing complete!', 'success');
+            addToast(`All ${audioFiles.length} files queued successfully!`, 'success');
+            setTimeout(() => setView('library'), 2000);
           }
+        } else {
+          // Parallel processing for <= 10
+          setLoadingMessage(`Processing ${audioFiles.length} files concurrently...`);
+          const results = await Promise.all(audioFiles.map(async (file, idx) => {
+            const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
+            const blob = await upload(fileName, file, { access: 'public', handleUploadUrl: '/api/upload' });
+            const res = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
+            return { ...res, name: file.name };
+          }));
+
+          const lastSuccess = results.reverse().find(r => !r.error);
+          if (lastSuccess) setResult(lastSuccess);
+          addToast(`Parallel processing of ${audioFiles.length} files complete!`, 'success');
         }
+      } else {
+        // Sequential mode (Original logic)
+        for (const [index, audioFile] of audioFiles.entries()) {
+          const fileProgress = audioFiles.length > 1 ? ` [${index + 1}/${audioFiles.length}]` : '';
+          setLoadingMessage(`Processing${fileProgress}...`);
+          const fileName = `${Date.now()}-${audioFile.name.replace(/\s+/g, '-')}`;
+          const blob = await upload(fileName, audioFile, { access: 'public', handleUploadUrl: '/api/upload' });
+          const res = await transcribeAction(blob.url, false, transcriptionModel, classificationModel);
+          if (!res.error) setResult(res);
+        }
+        addToast('Sequential processing complete!', 'success');
       }
-
-      if (isMultiple && !loadingMessage.includes('inline')) {
-        addToast('All files handled successfully.', 'success');
-        setTimeout(() => setView('library'), 2000);
-      }
-
       clearInterval(interval);
     } catch (err) {
       clearInterval(interval);
-      addToast('General error: ' + (err.message || 'Unknown'), 'error');
+      addToast('Error: ' + (err.message || 'Unknown'), 'error');
+    } finally {
+      setLoading(false);
+      setLoadingMessage('');
+    }
+  };
+
+  const handleBulkLibraryProcess = async () => {
+    if (selectedBlobs.length === 0) return;
+    setLoading(true);
+    setResult(null);
+
+    const urls = selectedBlobs;
+    try {
+      if (urls.length > 10) {
+        setLoadingMessage(`Batch too large (${urls.length}). Attempting background queue...`);
+        const queueResults = await Promise.all(urls.map(url => enqueueTranscriptionAction(url, transcriptionModel, classificationModel)));
+        const failed = queueResults.filter(r => r.fallback);
+
+        if (failed.length > 0) {
+          addToast(`Queue unavailable (Reason: ${failed[0].reason}). Processing first 10 concurrently...`, 'warning');
+          const firstTen = urls.slice(0, 10);
+          setLoadingMessage('Processing benchmark limit (10) concurrently...');
+          await Promise.all(firstTen.map(url => transcribeAction(url, false, transcriptionModel, classificationModel)));
+          addToast('Limit reached. Please wait for these 10 before starting more.', 'info');
+        } else {
+          addToast(`Successfully queued ${urls.length} files in background!`, 'success');
+          setSelectedBlobs([]);
+        }
+      } else {
+        setLoadingMessage(`Processing ${urls.length} files concurrently...`);
+        await Promise.all(urls.map(url => transcribeAction(url, false, transcriptionModel, classificationModel)));
+        addToast(`Parallel analysis of ${urls.length} files complete!`, 'success');
+        setSelectedBlobs([]);
+        fetchBlobs(); // Refresh to clear unprocessed state if any
+      }
+    } catch (err) {
+      addToast('Batch failed: ' + (err.message || 'Unknown'), 'error');
     } finally {
       setLoading(false);
       setLoadingMessage('');
@@ -258,28 +286,18 @@ export default function Page() {
 
   const handleLibraryProcess = async (blobUrl) => {
     setLoading(true);
-    setLoadingMessage('Initializing background task...');
+    setLoadingMessage('Processing...');
     setResult(null);
 
     try {
-      const res = await enqueueTranscriptionAction(blobUrl, transcriptionModel, classificationModel);
-
-      if (res.fallback) {
-        addToast(res.message, 'info');
-        setLoadingMessage('Background fail: Processing inline...');
-        const inlineRes = await transcribeAction(blobUrl, false, transcriptionModel, classificationModel);
-        if (inlineRes.error) addToast(inlineRes.error, 'error');
-        else {
-          setResult({ ...inlineRes, audioUrl: inlineRes.audioUrl || blobUrl });
-          addToast('File processed inline successfully', 'success');
-        }
-      } else if (res.error) {
-        addToast(res.error, 'error');
-      } else {
-        addToast('Successfully queued for background processing.', 'success');
+      const res = await transcribeAction(blobUrl, false, transcriptionModel, classificationModel);
+      if (res.error) addToast(res.error, 'error');
+      else {
+        setResult(res);
+        addToast('Analysis complete!', 'success');
       }
     } catch (err) {
-      addToast('Trigger failed: ' + (err.message || 'Unknown'), 'error');
+      addToast('Failed: ' + (err.message || 'Unknown'), 'error');
     } finally {
       setLoading(false);
       setLoadingMessage('');
@@ -296,11 +314,11 @@ export default function Page() {
     <div style={{ background: '#fcfcfd', minHeight: '100vh', padding: '2rem 1rem' }}>
       {/* Toasts */}
       {toasts.map(toast => (
-        <Toast 
-          key={toast.id} 
-          message={toast.message} 
-          type={toast.type} 
-          onClear={() => removeToast(toast.id)} 
+        <Toast
+          key={toast.id}
+          message={toast.message}
+          type={toast.type}
+          onClear={() => removeToast(toast.id)}
         />
       ))}
 
@@ -348,6 +366,30 @@ export default function Page() {
               disabled={loading}
             />
           </div>
+          <div style={{ marginTop: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #e8eaf0', paddingTop: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#111' }}>Concurrent Mode (Limit: 10)</span>
+              <span style={{ fontSize: '0.7rem', color: '#666' }}>Process multiple files at once using a parallel pool.</span>
+            </div>
+            <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px' }}>
+              <input
+                type="checkbox"
+                checked={isConcurrentMode}
+                onChange={() => setIsConcurrentMode(!isConcurrentMode)}
+                style={{ opacity: 0, width: 0, height: 0 }}
+              />
+              <span style={{
+                position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: isConcurrentMode ? '#0070f3' : '#ccc',
+                transition: '.4s', borderRadius: '34px'
+              }}>
+                <span style={{
+                  position: 'absolute', height: '18px', width: '18px', left: isConcurrentMode ? '22px' : '4px', bottom: '3px',
+                  backgroundColor: 'white', transition: '.4s', borderRadius: '50%'
+                }} />
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* Switcher Buttons */}
@@ -381,17 +423,17 @@ export default function Page() {
         {/* Views */}
         {view === 'upload' ? (
           <form onSubmit={handleFormSubmit}>
-            <div 
+            <div
               style={{
-                border: loading ? '2px dashed #f1f5f9' : `2px dashed ${selectedFileName ? '#2563eb' : '#e2e8f0'}`, 
-                borderRadius: '12px', 
-                padding: '3rem 2rem', 
+                border: loading ? '2px dashed #f1f5f9' : `2px dashed ${selectedFileName ? '#2563eb' : '#e2e8f0'}`,
+                borderRadius: '12px',
+                padding: '3rem 2rem',
                 textAlign: 'center',
-                marginBottom: '1.5rem', 
-                background: selectedFileName ? '#eff6ff' : '#fcfcfd', 
+                marginBottom: '1.5rem',
+                background: selectedFileName ? '#eff6ff' : '#fcfcfd',
                 transition: 'all 0.2s',
                 cursor: loading ? 'not-allowed' : 'pointer'
-              }} 
+              }}
               onClick={() => !loading && document.getElementById('audio-input').click()}
             >
               <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
@@ -440,7 +482,22 @@ export default function Page() {
           </form>
         ) : (
           <div style={{ background: '#fcfcfd', borderRadius: '12px', padding: '1.25rem', border: '1px solid #f1f1f4' }}>
-            <h3 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '1.25rem', color: '#334155' }}>Recent Cloud Storage Blobs</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: '700', color: '#334155' }}>Recent Cloud Storage Blobs</h3>
+              {selectedBlobs.length > 0 && (
+                <button
+                  onClick={handleBulkLibraryProcess}
+                  disabled={loading}
+                  style={{
+                    padding: '0.5rem 1rem', background: '#0070f3', color: 'white', border: 'none',
+                    borderRadius: '8px', fontSize: '0.8rem', cursor: loading ? 'default' : 'pointer',
+                    fontWeight: '700', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(0,112,243,0.2)'
+                  }}
+                >
+                  Analyze Selected ({selectedBlobs.length})
+                </button>
+              )}
+            </div>
             {blobList.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#94a3b8' }}>
                 <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>☁️</div>
@@ -450,11 +507,22 @@ export default function Page() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {blobList.map((blob, i) => (
                   <div key={i} style={{
-                    background: 'white', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'transform 0.2s'
+                    background: 'white', padding: '1rem', borderRadius: '10px', border: selectedBlobs.includes(blob.url) ? '1px solid #0070f3' : '1px solid #e2e8f0',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.2s'
                   }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>
-                      <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#1e293b' }}>{blob.pathname.split('/').pop()}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden', maxWidth: '65%' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedBlobs.includes(blob.url)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedBlobs(prev => [...prev, blob.url]);
+                          else setSelectedBlobs(prev => prev.filter(u => u !== blob.url));
+                        }}
+                        style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                      />
+                      <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {blob.pathname.split('/').pop()}
+                      </span>
                     </div>
                     <button
                       disabled={loading}

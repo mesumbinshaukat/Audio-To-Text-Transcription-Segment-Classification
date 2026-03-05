@@ -468,7 +468,24 @@ export async function saveClassificationAction(classificationData, timingData = 
 
     history.push(newEntry);
 
-    // 3. Save back to Vercel Blob
+    const saveTriggerUrl = (process.env.AZURE_FUNCTION_URL || 'http://localhost:7071/api/HttpBlobTrigger').replace('HttpBlobTrigger', 'SaveResultTrigger');
+
+    try {
+      const resp = await fetch(saveTriggerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEntry),
+        signal: AbortSignal.timeout(5000)
+      });
+      if (resp.ok) {
+        console.log('[save] Atomic save queued via Azure Function');
+        return { success: true };
+      }
+    } catch (triggerErr) {
+      console.warn('[save] Atomic writer unreachable, falling back to direct save:', triggerErr.message);
+    }
+
+    // 3. Fallback: Save back to Vercel Blob directly (Less safe but ensures availability)
     await put(RESULTS_FILE, JSON.stringify(history, null, 2), {
       access: 'public',
       contentType: 'application/json',
@@ -476,11 +493,30 @@ export async function saveClassificationAction(classificationData, timingData = 
       allowOverwrite: true,
     });
 
-    console.log('[save] Persisted classification to history');
+    console.log('[save] Persisted classification to history (Direct fallback)');
     return { success: true };
   } catch (error) {
     console.error('[save] Failed to persist data:', error);
     return { error: 'Failed to save to history' };
+  }
+}
+
+/**
+ * checkAzureFunctionAvailability:
+ * Pings the Azure Function to see if it's awake and reachable.
+ */
+export async function checkAzureFunctionAvailability() {
+  const url = process.env.AZURE_FUNCTION_URL || 'http://localhost:7071/api/HttpBlobTrigger';
+  try {
+    const resp = await fetch(url, {
+      method: 'GET', // Or a simple HEAD if supported
+      signal: AbortSignal.timeout(3000)
+    });
+    // Durable functions might return 404 on GET if not configured, 
+    // but a successful response or even a 405/404 from the right host is often enough to know it's "up".
+    return resp.status < 500;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -514,48 +550,51 @@ export async function enqueueTranscriptionAction(audioUrl, transcriptionModelId 
   try {
     const functionUrl = process.env.AZURE_FUNCTION_URL || 'http://localhost:7071/api/HttpBlobTrigger';
 
-    // If we're on Vercel and NO function URL is set, we must fallback to inline
     if (process.env.VERCEL && !process.env.AZURE_FUNCTION_URL) {
-      console.log('[enqueue] No Azure Function URL configured on Vercel, suggesting fallback');
       return {
         fallback: true,
-        message: 'Background processing not configured (AZURE_FUNCTION_URL missing). Switching to inline mode...'
+        reason: 'CONFIGURATION_MISSING',
+        message: 'Background processing (Azure) is not configured.'
       };
     }
 
-    // Simulate the Vercel Blob Webhook payload
+    // Pre-flight check
+    const isAvailable = await checkAzureFunctionAvailability();
+    if (!isAvailable) {
+      return {
+        fallback: true,
+        reason: 'SERVICE_UNAVAILABLE',
+        message: 'Azure background service is currently unreachable.'
+      };
+    }
+
     const payload = {
       type: 'blob.created',
-      payload: {
-        url: audioUrl,
-        transcriptionModelId,
-        classificationModelId
-      }
+      payload: { url: audioUrl, transcriptionModelId, classificationModelId }
     };
 
     const resp = await fetch(functionUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      // Add a short timeout for the trigger
       signal: AbortSignal.timeout(5000)
     });
 
     if (!resp.ok) {
-      console.warn(`[enqueue] Azure Function unreachable (${resp.status}), suggesting fallback`);
       return {
         fallback: true,
-        message: `Background service unavailable (${resp.status}). Processing inline...`
+        reason: 'SERVICE_ERROR',
+        message: `Azure returned an error (${resp.status}).`
       };
     }
 
     return { success: true, message: 'Added to background queue' };
   } catch (error) {
     console.error('[enqueue] Failed:', error);
-    // If it's a connection error (ECONNREFUSED or timeout), suggest fallback
     return {
       fallback: true,
-      message: 'Background service connection failed. Processing inline...'
+      reason: 'CONNECTION_FAILED',
+      message: 'Failed to connect to background service.'
     };
   }
 }
