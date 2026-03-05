@@ -109,9 +109,10 @@ export default function SearchPage() {
       if (!entryAudioUrl || !Array.isArray(entry.Segments)) return;
 
       entry.Segments.forEach((segment, sIndex) => {
-        // Only include segments that have some classification OR are meaningful
-        const isClassified = segment.SegmentClassification?.some(c => c.Category || c.EventType || c.Event || c.SubType);
-        if (isClassified) {
+        // Include segments that have classification OR an AI summary (Issue-focused search)
+        const isMeaningful = segment.SegmentClassification?.some(c => c.Category || c.EventType || c.Event || c.SubType) || !!segment.Segment_Summary;
+        
+        if (isMeaningful) {
           flattened.push({
             ...segment,
             parentEntryId: entry.id,
@@ -264,20 +265,23 @@ export default function SearchPage() {
                       borderLeft: `4px solid ${selectedIssue?.compositeId === item.compositeId ? COLORS.primary : 'transparent'}`
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: '700', color: COLORS.primary, background: '#eef2ff', padding: '2px 8px', borderRadius: '4px' }}>
-                        {item.SegmentClassification?.[0]?.Category || 'General'}
-                      </span>
-                      <span style={{ fontSize: '0.7rem', color: COLORS.textMuted }}>
-                        {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: '0.92rem', color: COLORS.text, fontWeight: '500', margin: '0 0 0.6rem 0', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                          {item.Segment_Summary || item.Segment_original}
+                        </p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                          <span style={{ fontSize: '0.7rem', color: COLORS.textMuted, display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
+                            <Clock size={10} /> {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <TruncatedAudioPlayer
+                            url={item.audioUrl}
+                            start={item.Starting_Second || item.start || 0}
+                            end={item.Ending_Second || item.end || 0}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: '0.9rem', fontWeight: '700', color: COLORS.text, marginBottom: '0.25rem' }}>
-                      {item.SegmentClassification?.[0]?.EventType || item.SegmentClassification?.[0]?.Event || 'Operational Note'}
-                    </div>
-                    <p style={{ fontSize: '0.8rem', color: COLORS.textMuted, margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {item.Segment_Summary || item.Segment_original}
-                    </p>
                   </div>
                 ))
               )}
@@ -296,11 +300,11 @@ export default function SearchPage() {
           ) : (
             <div style={{ background: 'white', borderRadius: '16px', border: `1px solid ${COLORS.border}`, padding: '2.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.03)', animation: 'fadeIn 0.3s ease-out' }}>
               <header style={{ marginBottom: '2.5rem' }}>
-                <h2 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, letterSpacing: '-0.025em' }}>
-                  {selectedIssue.SegmentClassification?.[0]?.EventType || selectedIssue.SegmentClassification?.[0]?.Event || 'Issue Details'}
+                <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: 0, letterSpacing: '-0.025em' }}>
+                  Segment Analysis
                 </h2>
-                <p style={{ fontSize: '0.9rem', color: COLORS.textMuted, marginTop: '0.5rem' }}>
-                  Recording from {new Date(selectedIssue.timestamp).toLocaleString()}
+                <p style={{ fontSize: '0.9rem', color: COLORS.textMuted, marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Clock size={14} /> Recorded on {new Date(selectedIssue.timestamp).toLocaleString()}
                 </p>
               </header>
 

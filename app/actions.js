@@ -86,6 +86,7 @@ Only classify segments using the following strict hierarchy. You must pick a Cat
 - Tags: Only add specific tags if they provide unique context not covered by the sub-event. If nothing special is detected, leave the array empty.
 - overall_DetectedNamedEntity: DO NOT include specific product names (e.g., "Marlboro", "Coke"). Instead, use the product's general category (e.g., "Tobacco", "Soda"). You may include names of people, store names, area names, or car types.
 - Unmatched Segments: Do not discard segments that don't fit. Include them in the output with an empty \`SegmentClassification\` list.
+- Segment_Summary: Provide a concise summary of this specific segment. You MUST include an audio trigger tag at the very end of the summary in the format [PLAY_AUDIO:START:END] where START and END are the Starting_Second and Ending_Second of this segment (e.g., "[PLAY_AUDIO:12.5:18.0]").
 
 Output ONLY a valid JSON object. Use placeholders for IDs.
 
