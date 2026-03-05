@@ -163,6 +163,12 @@ export default function SearchPage() {
     });
   }, [data, searchQuery]);
 
+  // Helper to remove [PLAY_AUDIO:...] tags for a clean display
+  const stripAudioTags = (text) => {
+    if (!text) return '';
+    return text.replace(/\[PLAY_AUDIO:[^\]]+\]/gi, '').trim();
+  };
+
   const handleSelectIssue = (issue) => {
     setSelectedIssue(issue);
     setSummary(issue.Segment_Summary || issue.Segment_original || "No detailed summary available.");
@@ -289,7 +295,7 @@ export default function SearchPage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1 }}>
                         <p style={{ fontSize: '0.92rem', color: COLORS.text, fontWeight: '500', margin: '0 0 0.6rem 0', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                          {item.Segment_Summary || item.Segment_original}
+                          {stripAudioTags(item.Segment_Summary || item.Segment_original)}
                         </p>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                           <span style={{ fontSize: '0.7rem', color: COLORS.textMuted, display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
@@ -335,7 +341,7 @@ export default function SearchPage() {
                 </h4>
 
                 <div style={{ fontSize: '1.25rem', lineHeight: '1.7', color: '#1e3a8a', fontWeight: '500' }}>
-                  {summary}
+                  {stripAudioTags(summary)}
                   {selectedIssue && (
                     <div style={{ marginTop: '1rem' }}>
                       <TruncatedAudioPlayer

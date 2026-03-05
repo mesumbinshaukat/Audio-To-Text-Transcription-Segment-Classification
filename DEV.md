@@ -45,11 +45,13 @@ The frontend (`app/page.js`) maintains three primary states for the processing p
 
 Selections are dynamically populated from `app/models.js`, ensuring that adding a new model to the backend automatically updates the UI.
 
-### Direct-to-Blob Upload Flow
-To bypass the **4.5MB Vercel Serverless Function limit**, the app uses `@vercel/blob`'s client-side upload.
-1. The client requests an upload token from `/api/upload/route.js`.
-2. The file is uploaded directly from the browser to Vercel's global storage.
 3. Only the resulting `url` is sent to the server action, allowing the server to process files up to **50MB+**.
+
+### Duplicate Upload Prevention
+To minimize redundant storage costs and processing time, the app performs an existence check before every upload:
+1. **Name Matching**: The `findBlobByNameAction` scans the Vercel Blob store for a file with a matching name.
+2. **Reuse Logic**: If a matching blob is found, the app skips the upload phase and reuses the existing URL for transcription.
+3. **UI Feedback**: The batch progress indicator displays an "EXISTING" status to inform the user that the file was cached.
 
 ---
 
@@ -169,3 +171,14 @@ Tested on March 6, 2026, to verify the boundaries of local parallel processing:
 The application implements a **Hybrid Overflow** mechanism to balance speed and reliability:
 1. **Local Parallel (0-20 files)**: Files are processed immediately in the browser via parallel Server Action calls. This provides instant results for standard batches.
 2. **Background Overflow (>20 files)**: Files beyond the 20-unit threshold are automatically enqueued to **Azure Durable Functions**. This prevents browser resource exhaustion and ensures large batches complete reliably in the background.
+
+#### Selectable Batch Results
+The batch progress UI is interactive:
+- Clicking a "Done" item in the batch list instantly switches the main analysis view to that specific file's result.
+- Each item in the processing queue maintains its own result state, allowing for seamless navigation without re-fetching data.
+
+### Lazy Audio Navigation (Search Page)
+To ensure high performance in the Search results list, we implement **Lazy Audio Loading**:
+- **Preload: Metadata**: The `<audio>` elements are configured to only fetch metadata initially.
+- **Lazy Rendering**: The physical `<audio>` tag for a segment is not rendered into the DOM until the user clicks the "Play Audio" button for the first time.
+- **Resource Management**: This prevents the browser from opening dozens of simultaneous media connections, ensuring a smooth scrolling and playing experience even with 100+ search results.
