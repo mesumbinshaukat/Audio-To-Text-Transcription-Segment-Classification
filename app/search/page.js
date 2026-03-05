@@ -22,21 +22,39 @@ const COLORS = {
  */
 function TruncatedAudioPlayer({ url, start, end, onEnded }) {
   const audioRef = useRef(null);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
+  // Synchronize start time when element is first rendered
   useEffect(() => {
-    if (audioRef.current) {
+    if (isLoaded && audioRef.current) {
       audioRef.current.currentTime = start;
     }
-  }, [start]);
+  }, [isLoaded, start]);
 
   const togglePlay = () => {
+    if (!isLoaded) {
+      setIsLoaded(true);
+      // Wait for re-render to populate ref, then play
+      setTimeout(() => {
+        if (audioRef.current) {
+          audioRef.current.currentTime = start;
+          audioRef.current.play().catch(err => {
+            console.error('Initial play failed:', err);
+            setIsPlaying(false);
+          });
+          setIsPlaying(true);
+        }
+      }, 100);
+      return;
+    }
+
     if (!audioRef.current) return;
 
     if (isPlaying) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play();
+      audioRef.current.play().catch(console.error);
     }
     setIsPlaying(!isPlaying);
   };
@@ -52,12 +70,15 @@ function TruncatedAudioPlayer({ url, start, end, onEnded }) {
 
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', margin: '0 4px' }}>
-      <audio
-        ref={audioRef}
-        src={url}
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={() => setIsPlaying(false)}
-      />
+      {isLoaded && (
+        <audio
+          ref={audioRef}
+          src={url}
+          preload="metadata"
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={() => setIsPlaying(false)}
+        />
+      )}
       <button
         onClick={togglePlay}
         style={{
